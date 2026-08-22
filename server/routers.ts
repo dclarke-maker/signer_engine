@@ -11,9 +11,24 @@ import {
   signInSigner,
 } from "./signer-service";
 import { extractBearerToken } from "./signer-security";
+import {
+  CONSENT_SCOPES,
+  CURRENT_CONSENT_VERSION,
+  getCurrentConsent,
+  grantConsent,
+  isConsentCurrent,
+  parseScopes,
+  withdrawConsent,
+} from "./consent-service";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { getWorkflowConfig } from "./workflow-config";
+
+/** Resolves the signer behind a Bearer token, or null when unauthenticated. */
+async function signerFromContext(ctx: { req: { headers: Record<string, unknown> } }) {
+  const token = extractBearerToken(ctx.req.headers.authorization as string | undefined);
+  return token ? getSignerFromSessionToken(token) : null;
+}
 
 export const appRouter = router({
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -81,6 +96,41 @@ export const appRouter = router({
         });
         return { signer: invitation.signer, expiresAt: invitation.expiresAt, status: "sent" as const };
       }),
+  }),
+  consent: router({
+    status: publicProcedure.query(async ({ ctx }) => {
+      const signer = await signerFromContext(ctx);
+      if (!signer) {
+        return { granted: false, consentVersion: CURRENT_CONSENT_VERSION, scopes: [] as string[] };
+      }
+      const record = await getCurrentConsent(signer.id);
+      return {
+        granted: isConsentCurrent(record),
+        consentVersion: CURRENT_CONSENT_VERSION,
+        scopes: record ? parseScopes(record.scopes) : ([] as string[]),
+      };
+    }),
+    grant: publicProcedure
+      .input(
+        z.object({
+          consentVersion: z.string().max(32),
+          scopes: z.array(z.enum(CONSENT_SCOPES)).min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before granting consent." });
+        }
+        return grantConsent({ signerId: signer.id, ...input });
+      }),
+    withdraw: publicProcedure.mutation(async ({ ctx }) => {
+      const signer = await signerFromContext(ctx);
+      if (!signer) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before withdrawing consent." });
+      }
+      return withdrawConsent(signer.id);
+    }),
   }),
   evaluation: router({
     next: publicProcedure.query(() => ({
