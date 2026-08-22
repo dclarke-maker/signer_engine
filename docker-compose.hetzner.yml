@@ -10,7 +10,7 @@ services:
       WORKFLOW_CONFIG_VERSION: ${WORKFLOW_CONFIG_VERSION:-production-v1}
       OBJECT_STORAGE_MODE: hetzner
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:?Set the Hetzner Object Storage endpoint}
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?Set a private recording bucket name}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?Set a private landmark-sequence bucket name}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-fsn1}
       OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?Set the Hetzner Object Storage access key}
       OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?Set the Hetzner Object Storage secret key}
@@ -21,6 +21,12 @@ services:
       SMTP_FROM: ${SMTP_FROM:?Set the invitation sender address}
       SIGNER_INVITE_BASE_URL: ${SIGNER_INVITE_BASE_URL:?Set the public password-setup URL}
       INTERNAL_ADMIN_KEY: ${INTERNAL_ADMIN_KEY:?Set the internal administrator API key}
+      CONSENT_VERSION: ${CONSENT_VERSION:-v1}
+      STUDY_SPLIT_SEED: ${STUDY_SPLIT_SEED:?Set the study split seed so partitions stay reproducible}
+      # Enabling this in production is a deliberate act, scoped to the NDFN
+      # validation workshop, and requires a workshop-scoped consent grant.
+      CALIBRATION_BUFFER_ENABLED: ${CALIBRATION_BUFFER_ENABLED:-false}
+      CALIBRATION_BUFFER_RETENTION_HOURS: ${CALIBRATION_BUFFER_RETENTION_HOURS:-24}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     depends_on:

@@ -11,7 +11,7 @@ services:
       WORKFLOW_CONFIG_VERSION: ${WORKFLOW_CONFIG_VERSION:-local-v1}
       OBJECT_STORAGE_MODE: minio
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-signbridge-recordings}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-signbridge-sequences}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-signbridge-local}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-signbridge-local-secret}
@@ -22,6 +22,12 @@ services:
       SMTP_FROM: ${SMTP_FROM:-SignBridge <no-reply@localhost>}
       SIGNER_INVITE_BASE_URL: ${SIGNER_INVITE_BASE_URL:-signbridge://set-password}
       INTERNAL_ADMIN_KEY: ${INTERNAL_ADMIN_KEY:-signbridge-local-admin-key}
+      CONSENT_VERSION: ${CONSENT_VERSION:-v1}
+      STUDY_SPLIT_SEED: ${STUDY_SPLIT_SEED:-signbridge-study-v1}
+      # Raw video is never written on the participant path. This enables the
+      # workshop calibration buffer only, and is off by default. See design.md 3.3.
+      CALIBRATION_BUFFER_ENABLED: ${CALIBRATION_BUFFER_ENABLED:-false}
+      CALIBRATION_BUFFER_RETENTION_HOURS: ${CALIBRATION_BUFFER_RETENTION_HOURS:-24}
     ports:
       - "3000:3000"
     depends_on:
@@ -104,7 +110,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-signbridge-local}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-signbridge-local-secret}
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-signbridge-recordings}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-signbridge-sequences}
     entrypoint: >
       /bin/sh -c "until mc alias set signbridge http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do sleep 2; done; mc mb --ignore-existing signbridge/$$OBJECT_STORAGE_BUCKET"
     restart: "no"

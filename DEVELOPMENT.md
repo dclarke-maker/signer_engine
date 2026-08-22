@@ -2,9 +2,9 @@
 
 ## Purpose
 
-SignBridge has an Expo mobile client and a Node.js backend. The mobile application captures a signer clip only after that signer has activated an approved account and signed in. Docker Compose provides the complete low-cost development stack: the backend, MariaDB for signer data, MinIO for recording-object simulation, and Mailpit for invitation-email inspection. Production uses a Hetzner server, a colocated MariaDB container, Hetzner Object Storage for private recordings, and Gmail SMTP for invitations.
+SignBridge has an Expo mobile client and a Node.js backend. The mobile application never records video. While a participant signs, the device extracts hand, face, and pose landmarks and discards each camera frame immediately; only the resulting coordinate sequence, the sentence label, and its category are transmitted. Docker Compose provides the complete low-cost development stack: the backend, MariaDB for research data, MinIO for landmark-sequence storage, and Mailpit for invitation-email inspection. Production uses a Hetzner server, a colocated MariaDB container, private Hetzner Object Storage, and Gmail SMTP for invitations.
 
-> This release establishes the account, invitation, session, and capture-ownership boundaries. The native client records a clip and the API records the authenticated capture metadata. Secure direct or multipart transport of the video bytes to object storage is the next storage hardening step.
+> **The app requires a custom development client.** Landmark extraction runs as a native frame processor, which Expo Go cannot load. See [Building the mobile client](#building-the-mobile-client).
 
 ## Architecture
 
@@ -12,7 +12,8 @@ SignBridge has an Expo mobile client and a Node.js backend. The mobile applicati
 | ----------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | **Signer identity**                 | MariaDB signer-account, invitation, and session tables | MariaDB on the Hetzner server with a persistent volume                                 |
 | **Invitation delivery**             | Mailpit inbox at `http://localhost:8025`               | Gmail SMTP using a dedicated sender account and protected server environment variables |
-| **Video recording objects**         | MinIO at `http://localhost:9000`                       | Private Hetzner Object Storage bucket                                                  |
+| **Landmark sequence objects**       | MinIO at `http://localhost:9000`                       | Private Hetzner Object Storage bucket, server-side credentials only                    |
+| **Research data**                   | MariaDB prompts, sessions, tags, jobs, feedback        | MariaDB on the Hetzner server with a persistent volume                                 |
 | **Administrator invitation access** | Header-protected internal endpoint                     | Replace with the external administrator API guard when its contract is supplied        |
 
 The `signer_accounts` table records only approved email addresses and password hashes. Invitation and session tokens are stored only as SHA-256 hashes. The corresponding raw tokens are returned to the signer once, through the invitation path, and are not stored as plaintext.
@@ -29,12 +30,12 @@ The local services are available at the following addresses.
 
 | Service       | Address                 | Purpose                                                                   |
 | ------------- | ----------------------- | ------------------------------------------------------------------------- |
-| Backend API   | `http://localhost:3000` | Stage configuration, signer sessions, captures, feedback, and invitations |
+| Backend API   | `http://localhost:3000` | Stage configuration, signer sessions, capture sessions, landmark uploads, translation, feedback |
 | Mailpit       | `http://localhost:8025` | View local invitation emails without sending messages externally          |
 | MinIO API     | `http://localhost:9000` | Object-storage emulator                                                   |
-| MinIO console | `http://localhost:9001` | Inspect the local recording bucket                                        |
+| MinIO console | `http://localhost:9001` | Inspect the local landmark-sequence bucket                                |
 
-Compose waits for MariaDB, runs the reviewed Drizzle migrations, and creates the local MinIO recording bucket before starting the backend. The development defaults are only for a local workstation. Replace the default database, MinIO, and internal-admin values before sharing the environment with anyone else.
+Compose waits for MariaDB, runs the reviewed Drizzle migrations, and creates the local MinIO sequence bucket before starting the backend. The development defaults are only for a local workstation. Replace the default database, MinIO, and internal-admin values before sharing the environment with anyone else.
 
 ## Signer invitation and sign-in lifecycle
 
@@ -42,7 +43,8 @@ Compose waits for MariaDB, runs the reviewed Drizzle migrations, and creates the
 2. The backend creates a one-time invitation token with a 72-hour expiration and sends the setup link through Mailpit locally or Gmail SMTP in production.
 3. The signer follows the link, sets a password of at least 12 characters, and receives a seven-day session token.
 4. The mobile app stores the session token in encrypted native secure storage and verifies the session with the API before opening the camera.
-5. Each accepted capture metadata record is associated with the authenticated signer identifier.
+5. Each capture session, landmark sequence, and non-manual marker tag is associated with the authenticated signer identifier.
+6. A participant must grant versioned research consent before any capture session can be started.
 
 The temporary internal administrator endpoint requires `x-internal-admin-key`. It is deliberately not called by the mobile app. When the secured administrator API details are available, that header check should be replaced by the provider-issued administrator authentication rule before any production administrator interface is exposed.
 
@@ -53,15 +55,45 @@ Set the following values in the Hetzner server's protected environment before st
 | Variable                    | Example format                        | Purpose                                           |
 | --------------------------- | ------------------------------------- | ------------------------------------------------- |
 | `OBJECT_STORAGE_ENDPOINT`   | `https://fsn1.your-objectstorage.com` | Location-specific Hetzner Object Storage endpoint |
-| `OBJECT_STORAGE_BUCKET`     | `signbridge-recordings-prod`          | Private signer-recording bucket                   |
+| `OBJECT_STORAGE_BUCKET`     | `signbridge-sequences-prod`           | Private landmark-sequence bucket                  |
 | `OBJECT_STORAGE_REGION`     | `fsn1`                                | Bucket location                                   |
 | `OBJECT_STORAGE_ACCESS_KEY` | Provider-issued key                   | Server-only bucket access credential              |
 | `OBJECT_STORAGE_SECRET_KEY` | Provider-issued secret                | Server-only bucket access credential              |
 | `MYSQL_PASSWORD`            | Long random secret                    | MariaDB application account password              |
 | `MYSQL_ROOT_PASSWORD`       | Long random secret                    | MariaDB root password                             |
 | `INTERNAL_ADMIN_KEY`        | Long random secret                    | Temporary internal invitation-management guard    |
+| `CONSENT_VERSION`           | `v1`                                  | Consent text version in force; a bump invalidates earlier grants |
+| `STUDY_SPLIT_SEED`          | `signbridge-study-v1`                 | Seeds the signer-independent partition so it is reproducible |
 
 Hetzner Object Storage uses a compatible object-storage API with location-specific endpoints. Keep the bucket private, create credentials in the Hetzner Console, and retain the issued secret immediately because it is not shown again. [1] [2]
+
+In production the backend refuses to start an upload when any of these four storage variables is missing, and it never creates the bucket itself. Provision the bucket out of band; auto-creation would turn a credential or naming error into a silently wrong bucket rather than a visible failure.
+
+## Privacy posture
+
+The participant path never writes or transmits video. Camera frames exist in device memory only, for as long as it takes to extract landmarks, and are then discarded. Object storage holds gzipped landmark JSON; the database holds prompts, sessions, sequence metadata, non-manual marker tags, translation jobs, votes, and ratings. None of it contains an image, an audio sample, or a free-text identifier.
+
+The one exception is the **workshop calibration buffer**, which lets the NDFN Linguistic Validation Workshop check heuristic thresholds against what a human observer sees. It is off by default, requires a workshop-scoped consent grant, and is never reachable from the participant capture flow.
+
+| Variable                              | Default | Purpose                                                                 |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------- |
+| `CALIBRATION_BUFFER_ENABLED`          | `false` | Enables the workshop-only transient buffer. Leave off for data collection |
+| `CALIBRATION_BUFFER_RETENTION_HOURS`  | `24`    | Hard ceiling enforced by scheduled purge, not by operator discipline     |
+
+See `design.md` §3 for the full data flow and the four security guarantees.
+
+## Building the mobile client
+
+Landmark extraction runs as a native frame processor, so **Expo Go cannot run this app**. Generate the native projects and build a development client:
+
+```bash
+npx expo prebuild        # generates ios/ and android/
+pnpm ios                 # or: pnpm android
+```
+
+The first native build takes 10-20 minutes and needs Xcode (iOS) or the Android SDK. Once the development client is installed, `pnpm dev` drives it as usual.
+
+Until the native extractor lands, `getExtractor()` in `lib/extractors/index.ts` returns a deterministic fixture extractor. Every screen depends on that interface rather than on a concrete extractor, so swapping in MediaPipe changes one function and no screens.
 
 ## Production: Gmail SMTP
 
