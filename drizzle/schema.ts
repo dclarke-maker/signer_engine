@@ -92,6 +92,11 @@ export const sentencePrompts = mysqlTable("sentence_prompts", {
   category: mysqlEnum("category", CORPUS_CATEGORIES).notNull(),
   orderIndex: int("orderIndex").notNull(),
   textEnglish: varchar("textEnglish", { length: 512 }).notNull(),
+  /** Shown to the signer. The English is the reference the model is scored on. */
+  textNepali: varchar("textNepali", { length: 512 }).notNull(),
+  nepaliSource: mysqlEnum("nepaliSource", ["ndfn-validated", "machine-draft"])
+    .default("machine-draft")
+    .notNull(),
   /** JSON array of NmmType - markers this sentence is designed to elicit. */
   expectedNmms: text("expectedNmms").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

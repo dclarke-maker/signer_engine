@@ -1,0 +1,2 @@
+ALTER TABLE `sentence_prompts` ADD `textNepali` varchar(512) NOT NULL;--> statement-breakpoint
+ALTER TABLE `sentence_prompts` ADD `nepaliSource` enum('ndfn-validated','machine-draft') DEFAULT 'machine-draft' NOT NULL;

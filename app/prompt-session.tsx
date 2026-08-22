@@ -53,7 +53,12 @@ export default function PromptSessionScreen() {
     const session = await startSession.mutateAsync({ promptId: prompt.id });
     router.push({
       pathname: "/capture",
-      params: { sessionId: session.id, promptId: prompt.id, text: prompt.textEnglish },
+      params: {
+        sessionId: session.id,
+        promptId: prompt.id,
+        text: prompt.textEnglish,
+        nepali: prompt.textNepali,
+      },
     } as never);
   };
 
@@ -119,10 +124,24 @@ export default function PromptSessionScreen() {
           </View>
 
           <View style={styles.promptCard}>
-            <Text style={styles.promptLabel}>Sign this sentence</Text>
-            <Text style={styles.promptText}>{prompt.textEnglish}</Text>
+            <Text style={styles.promptLabel}>यो वाक्य सङ्केत गर्नुहोस्</Text>
+            {/* Nepali is what the signer reads and signs from; the English is
+                the reference the model is scored against, kept visible so a
+                mismatch is noticeable rather than silent. */}
+            <Text style={styles.promptText}>{prompt.textNepali}</Text>
+            <Text style={styles.promptEnglish}>{prompt.textEnglish}</Text>
             <Text style={styles.promptPurpose}>{CATEGORY_PURPOSE[prompt.category]}</Text>
           </View>
+
+          {prompt.nepaliSource !== "ndfn-validated" ? (
+            <View style={styles.draftNotice}>
+              <Text style={styles.draftTitle}>Translation not yet reviewed</Text>
+              <Text style={styles.draftText}>
+                This Nepali wording is a draft awaiting review by a native reviewer. Do not use
+                these prompts for real data collection until they have been checked.
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.guidance}>
             <Text style={styles.guidanceTitle}>Before you start</Text>
@@ -219,7 +238,18 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  promptText: { color: "#102A43", fontSize: 28, lineHeight: 36, fontWeight: "700" },
+  promptText: { color: "#102A43", fontSize: 30, lineHeight: 44, fontWeight: "700" },
+  promptEnglish: { color: "#486581", fontSize: 16, lineHeight: 23 },
+  draftNotice: {
+    backgroundColor: "#FFF7ED",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    padding: 14,
+    gap: 5,
+  },
+  draftTitle: { color: "#B45309", fontSize: 14, fontWeight: "700" },
+  draftText: { color: "#9A3412", fontSize: 13, lineHeight: 19 },
   promptPurpose: { color: "#486581", fontSize: 14, lineHeight: 20 },
   guidance: { gap: 7, marginTop: 2 },
   guidanceTitle: { color: "#102A43", fontSize: 17, fontWeight: "700" },

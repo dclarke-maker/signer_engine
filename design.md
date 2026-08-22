@@ -267,6 +267,12 @@ This participatory approach ensures the system captures culturally valid NSL gra
 
 The corpus is **seed data with a validation rule**, not hard-coded strings: the seed must contain exactly 20 sentences per category or the seed check fails. All 100 sentences are transcribed from Appendix A of the proposal.
 
+**Each prompt carries both languages, and the signer reads the Nepali.** English literacy is not the realistic reading path for Nepali Deaf participants; Nepali is. But the model is scored against the *English* reference, so the two must be faithful equivalents — a loose translation mislabels every sample taken against that prompt, and nothing downstream would catch it. Both texts are therefore stored on the prompt, both travel into the export, and both are shown during capture so a mismatch is visible rather than silent.
+
+`nepaliSource` records provenance per prompt: `machine-draft` or `ndfn-validated`. Every rendering is currently a draft, drafted in-project and **not yet reviewed by a native speaker**. The prompt screen shows a standing notice while any prompt is unvalidated, and `isCorpusTranslationValidated()` is the check that must pass before real collection begins.
+
+Note that written Nepali is not NSL. Prompting with text asks the signer to render Nepali into NSL, which is itself a translation step — the proposal's design ("each recorded video corresponds to a predefined text prompt") accepts this, but it is a source of variation the NDFN workshop should examine.
+
 > **Transcription note.** Appendix A prints one Category E entry as `" need help with this form."`, missing its leading "I". The seed records it as *"I need help with this form."* and the correction is noted inline in the seed file. No other sentence is altered.
 
 ### 6.2 Prompt Delivery

@@ -120,7 +120,13 @@ export async function startCaptureSession(input: { signerId: number; promptId: s
     status: "recording",
   });
 
-  return { id, promptId: prompt.id, category: prompt.category, textEnglish: prompt.textEnglish };
+  return {
+    id,
+    promptId: prompt.id,
+    category: prompt.category,
+    textEnglish: prompt.textEnglish,
+    textNepali: prompt.textNepali,
+  };
 }
 
 export async function skipPrompt(input: { signerId: number; promptId: string; reason: string }) {
@@ -194,10 +200,17 @@ export async function seedSentencePrompts() {
         category: prompt.category,
         orderIndex: prompt.orderIndex,
         textEnglish: prompt.textEnglish,
+        textNepali: prompt.textNepali,
+        nepaliSource: prompt.nepaliSource,
         expectedNmms: JSON.stringify(prompt.expectedNmms),
       })
       .onDuplicateKeyUpdate({
-        set: { textEnglish: prompt.textEnglish, expectedNmms: JSON.stringify(prompt.expectedNmms) },
+        set: {
+          textEnglish: prompt.textEnglish,
+          textNepali: prompt.textNepali,
+          nepaliSource: prompt.nepaliSource,
+          expectedNmms: JSON.stringify(prompt.expectedNmms),
+        },
       });
   }
   return { seeded: corpusSeed.length };

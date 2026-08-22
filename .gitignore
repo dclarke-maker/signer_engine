@@ -6,6 +6,20 @@ node_modules/
 # pnpm content-addressable store (created when the store-dir is set inside the repo)
 .pnpm-store/
 
+# credentials and secrets - never commit these
+password
+password.*
+secrets
+secrets.*
+*.pem
+*.key
+!theme.config.d.ts
+id_rsa*
+id_ed25519*
+.env
+.env.*
+!.env.example
+
 # Expo
 .expo/
 dist/

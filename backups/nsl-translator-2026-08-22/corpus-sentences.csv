@@ -1,0 +1,102 @@
+sentence_id,category,difficulty,english,nepali
+e01,everyday,easy,Please give me water.,कृपया मलाई पानी दिनुस्।
+e02,everyday,easy,Thank you very much.,धेरै धन्यवाद।
+e03,everyday,easy,I am hungry.,मलाई भोक लागेको छ।
+e04,everyday,medium,Please call a doctor.,कृपया डाक्टरलाई बोलाउनुस्।
+e05,everyday,easy,I need help.,मलाई सहयोग चाहिन्छ।
+e06,everyday,easy,Good morning.,शुभ प्रभात।
+e07,everyday,easy,See you later.,पछि भेटौंला।
+e08,everyday,medium,I am feeling tired.,मलाई थकान महसुस भइरहेको छ।
+e09,everyday,easy,Please speak slowly.,कृपया बिस्तारै बोल्नुस्।
+e10,everyday,easy,Where is the toilet?,शौचालय कहाँ छ?
+e11,everyday,medium,I want to buy vegetables.,म तरकारी किन्न चाहन्छु।
+e12,everyday,easy,Please write it down.,कृपया लेखिदिनुस्।
+e13,everyday,easy,I am lost.,म हराएको छु।
+e14,everyday,medium,This is too expensive.,यो धेरै महँगो छ।
+e15,everyday,medium,I would like a receipt.,मलाई रसिद चाहिन्छ।
+e16,everyday,easy,Please wait a moment.,कृपया एक क्षण पर्खनुस्।
+e17,everyday,medium,I have a headache.,मेरो टाउको दुखिरहेको छ।
+e18,everyday,easy,Can you repeat that?,के तपाईं फेरि भन्न सक्नुहुन्छ?
+e19,everyday,easy,I am deaf.,म बहिरो हुँ।
+e20,everyday,medium,Please use sign language.,कृपया सांकेतिक भाषा प्रयोग गर्नुस्।
+n01,negation,easy,I do not understand.,म बुझ्दिनँ।
+n02,negation,easy,She is not here.,उनी यहाँ छैनन्।
+n03,negation,easy,I do not want to go.,म जान चाहन्नँ।
+n04,negation,medium,He did not eat anything.,उनले केही खाएनन्।
+n05,negation,easy,This is not my bag.,यो मेरो झोला होइन।
+n06,negation,medium,We cannot come tomorrow.,हामी भोलि आउन सक्दैनौं।
+n07,negation,easy,I have no money.,मसँग पैसा छैन।
+n08,negation,easy,The shop is not open.,पसल खुला छैन।
+n09,negation,medium,She does not speak Nepali.,उनी नेपाली बोल्दिनन्।
+n10,negation,easy,I am not sick.,म बिरामी छैन।
+n11,negation,hard,He never comes on time.,उनी कहिल्यै समयमा आउँदैनन्।
+n12,negation,easy,There is no water here.,यहाँ पानी छैन।
+n13,negation,medium,I did not say that.,मैले त्यो भनेको होइन।
+n14,negation,medium,They are not coming today.,तिनीहरू आज आउँदैनन्।
+n15,negation,medium,This road is not safe.,यो बाटो सुरक्षित छैन।
+n16,negation,medium,I cannot hear you.,म तपाईंको कुरा सुन्न सक्दिनँ।
+n17,negation,hard,She has not arrived yet.,उनी अझै आइपुगेकी छैनन्।
+n18,negation,medium,I do not know the address.,मलाई ठेगाना थाहा छैन।
+n19,negation,hard,Nobody helped me.,कसैले मलाई सहयोग गरेन।
+n20,negation,easy,The door is not locked.,ढोका बन्द छैन।
+q01,question,easy,What is your name?,तपाईंको नाम के हो?
+q02,question,easy,Where do you live?,तपाईं कहाँ बस्नुहुन्छ?
+q03,question,easy,How old are you?,तपाईंको उमेर कति हो?
+q04,question,easy,What time is it?,अहिले कति बज्यो?
+q05,question,easy,Are you feeling well?,तपाईं ठीक हुनुहुन्छ?
+q06,question,medium,Where is the nearest hospital?,नजिकको अस्पताल कहाँ छ?
+q07,question,medium,Can you help me?,के तपाईं मलाई सहयोग गर्न सक्नुहुन्छ?
+q08,question,medium,What is the price of this?,यसको मूल्य कति हो?
+q09,question,hard,Do you understand sign language?,के तपाईं सांकेतिक भाषा बुझ्नुहुन्छ?
+q10,question,medium,Which bus goes to Thamel?,थमेल जाने बस कुन हो?
+q11,question,medium,How far is the station?,स्टेशन कति टाढा छ?
+q12,question,easy,Who is your doctor?,तपाईंको डाक्टर को हुनुहुन्छ?
+q13,question,medium,What did you eat today?,तपाईंले आज के खानुभयो?
+q14,question,medium,Is the market open now?,के बजार अहिले खुला छ?
+q15,question,medium,When will you come back?,तपाईं कहिले फर्कनुहुन्छ?
+q16,question,medium,Why are you crying?,तपाईं किन रुनुभएको?
+q17,question,medium,How many people are there?,त्यहाँ कति मान्छे छन्?
+q18,question,medium,What is your occupation?,तपाईंको पेशा के हो?
+q19,question,easy,Can I sit here?,के म यहाँ बस्न सक्छु?
+q20,question,easy,Do you have a pen?,के तपाईंसँग कलम छ?
+s01,statement,easy,My name is Ram.,मेरो नाम राम हो।
+s02,statement,easy,I live in Kathmandu.,म काठमाडौंमा बस्छु।
+s03,statement,easy,She is my sister.,उनी मेरी बहिनी हुन्।
+s04,statement,medium,He works at a hospital.,उनी अस्पतालमा काम गर्छन्।
+s05,statement,easy,The book is on the table.,किताब टेबलमा छ।
+s06,statement,medium,Nepal is a beautiful country.,नेपाल एक सुन्दर देश हो।
+s07,statement,easy,I am a student.,म एक विद्यार्थी हुँ।
+s08,statement,easy,The weather is cold today.,आज मौसम चिसो छ।
+s09,statement,medium,We are going to the market.,हामी बजार जाँदैछौं।
+s10,statement,medium,The child is playing outside.,बच्चा बाहिर खेलिरहेको छ।
+s11,statement,easy,My father is a teacher.,मेरो बुबा एक शिक्षक हुनुहुन्छ।
+s12,statement,medium,The train arrives at noon.,रेल दिउँसो आउँछ।
+s13,statement,medium,She likes to read books.,उनलाई किताब पढ्न मन पर्छ।
+s14,statement,medium,The hospital is near the school.,अस्पताल स्कुलको नजिक छ।
+s15,statement,easy,I have two brothers.,मेरो दुई भाइ छन्।
+s16,statement,medium,The meeting starts at nine.,बैठक नौ बजे सुरु हुन्छ।
+s17,statement,easy,This is my house.,यो मेरो घर हो।
+s18,statement,easy,The food is very tasty.,खाना धेरै मिठो छ।
+s19,statement,easy,They are good friends.,तिनीहरू राम्रा साथी हुन्।
+s20,statement,hard,The river flows through the valley.,नदी उपत्यकाबाट बग्छ।
+t01,temporal,easy,I will come tomorrow.,म भोलि आउँछु।
+t02,temporal,easy,She came yesterday.,उनी हिजो आइन्।
+t03,temporal,medium,We met last week.,हामी गत हप्ता भेट्यौं।
+t04,temporal,medium,The event is next month.,कार्यक्रम अर्को महिना छ।
+t05,temporal,medium,I wake up at six every morning.,म हरेक बिहान छ बजे उठ्छु।
+t06,temporal,hard,They will finish it by Friday.,तिनीहरू शुक्रबारसम्म सकाउँछन्।
+t07,temporal,hard,It was raining two hours ago.,दुई घण्टा पहिले पानी परिरहेको थियो।
+t08,temporal,hard,I have been waiting since morning.,म बिहानदेखि पर्खिरहेको छु।
+t09,temporal,medium,She will call you soon.,उनी तपाईंलाई चाँडै फोन गर्छिन्।
+t10,temporal,medium,The festival was last year.,चाड गत वर्ष थियो।
+t11,temporal,medium,He left three days ago.,उनी तीन दिन पहिले गए।
+t12,temporal,medium,I will finish this work by evening.,म यो काम साँझसम्म सकाउँछु।
+t13,temporal,hard,We used to play here as children.,हामी बच्चाको बेला यहाँ खेल्थ्यौं।
+t14,temporal,medium,The bus comes every hour.,बस हरेक घण्टामा आउँछ।
+t15,temporal,medium,I will be back in five minutes.,म पाँच मिनेटमा फर्कन्छु।
+t16,temporal,hard,She has been working here for two years.,उनी यहाँ दुई वर्षदेखि काम गर्दैछिन्।
+t17,temporal,hard,The meeting was postponed to next week.,बैठक अर्को हप्तासम्म सारियो।
+t18,temporal,medium,I always eat breakfast at eight.,म सधैं आठ बजे बिहानको खाना खान्छु।
+t19,temporal,easy,They arrived just now.,तिनीहरू अहिलेमात्र आए।
+t20,temporal,medium,The school opens in January.,स्कुल जनवरीमा खुल्छ।
+(100 rows)

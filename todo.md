@@ -13,6 +13,11 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 - [ ] **Verify against the wire format.** `encodeHolisticBuffer` in `lib/extractors/holistic-buffer.ts` is the executable spec; confirm the native writers produce a buffer the decoder accepts, then check face 468, pose 33, 21 per hand, and the achieved frame rate.
 - [ ] Give the web extractor a `<video>` source. `expo-camera`'s `CameraView` renders one internally on web but does not expose a ref, so this needs a web-specific capture path or a plain `getUserMedia` element.
 
+## Corpus translation
+
+- [ ] **Have a native Nepali speaker review all 100 renderings**, ideally through NDFN. They are drafted in-project and marked `machine-draft`; collection must not begin on drafts, because the signer reads the Nepali while the model is scored against the English. Flip `nepaliSource` to `ndfn-validated` per prompt as they are checked.
+- [ ] Decide whether written-Nepali prompting is right at all. It asks the signer to render Nepali into NSL, which is a translation step in itself. A signed-video prompt would remove it, at the cost of needing an NSL signer to record 100 stimulus clips first.
+
 ## Elsewhere
 
 - [ ] Implement the workshop calibration buffer itself. The environment contract, consent scope, and retention ceiling exist; the encrypted transient store and scheduled purge do not.

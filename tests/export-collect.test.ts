@@ -74,6 +74,7 @@ describe.skipIf(!process.env.DATABASE_URL)("export collection", () => {
     expect(mine.map((r) => r.signerId)).toEqual([KEEP]);
     const row = mine[0];
     expect(row.textEnglish).toBe("Where is the hospital?");
+    expect(row.textNepali).toBe("अस्पताल कहाँ छ?");
     expect(row.category).toBe("interrogative");
     expect(row.extractorId).toBe("fixture@1");
     expect(row.storageKey).not.toMatch(/\.mp4$/);

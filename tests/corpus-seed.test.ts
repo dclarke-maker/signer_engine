@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { corpusSeed, validateCorpusSeed } from "../server/corpus-seed";
+import { corpusSeed, isCorpusTranslationValidated, validateCorpusSeed } from "../server/corpus-seed";
 import { CORPUS_CATEGORIES, CORPUS_SIZE, SENTENCES_PER_CATEGORY } from "../shared/corpus";
 
 describe("corpus seed", () => {
@@ -45,6 +45,40 @@ describe("corpus seed", () => {
   it("corrects the mistyped Appendix A utility sentence", () => {
     expect(corpusSeed.some((p) => p.textEnglish === "I need help with this form.")).toBe(true);
     expect(corpusSeed.some((p) => p.textEnglish.startsWith(" need"))).toBe(false);
+  });
+
+  it("gives every prompt a Nepali rendering", () => {
+    // The signer reads Nepali and signs from it. A prompt without one cannot be
+    // shown at all.
+    expect(corpusSeed.every((p) => p.textNepali.trim().length > 0)).toBe(true);
+    expect(new Set(corpusSeed.map((p) => p.textNepali)).size).toBe(CORPUS_SIZE);
+  });
+
+  it("uses Devanagari for the Nepali, not transliterated Latin", () => {
+    const devanagari = /[\u0900-\u097F]/;
+    for (const p of corpusSeed) {
+      expect(devanagari.test(p.textNepali), `${p.id} is not Devanagari`).toBe(true);
+    }
+  });
+
+  it("keeps question marks on interrogatives in both languages", () => {
+    for (const p of corpusSeed.filter((x) => x.category === "interrogative")) {
+      expect(p.textEnglish.endsWith("?"), `${p.id} English`).toBe(true);
+      expect(p.textNepali.endsWith("?"), `${p.id} Nepali`).toBe(true);
+    }
+  });
+
+  it("reports the corpus as unvalidated until a native reviewer signs it off", () => {
+    // Every rendering is currently a draft. Collection must not proceed on
+    // drafts: the signer reads the Nepali while the model is scored against the
+    // English, so a loose translation mislabels every sample taken against it.
+    expect(corpusSeed.every((p) => p.nepaliSource === "machine-draft")).toBe(true);
+    expect(isCorpusTranslationValidated()).toBe(false);
+  });
+
+  it("recognises a fully validated corpus", () => {
+    const validated = corpusSeed.map((p) => ({ ...p, nepaliSource: "ndfn-validated" as const }));
+    expect(isCorpusTranslationValidated(validated)).toBe(true);
   });
 
   it("has no blank or duplicate sentences", () => {

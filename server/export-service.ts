@@ -20,6 +20,8 @@ export type ExportRow = {
   promptId: string;
   category: CorpusCategory;
   textEnglish: string;
+  /** What the signer actually read. Kept so a mismatch stays auditable. */
+  textNepali: string;
   storageKey: string;
   extractorId: string;
   frameCount: number;
@@ -50,6 +52,7 @@ export function buildTrainingJsonl(rows: ExportRow[]): string {
         promptId: row.promptId,
         category: row.category,
         text: row.textEnglish,
+        textNepali: row.textNepali,
         sequence: row.storageKey,
         extractorId: row.extractorId,
         frameCount: row.frameCount,
@@ -161,7 +164,7 @@ export async function collectExportRows(): Promise<ExportRow[]> {
     tagsBySession.set(tag.sessionId, list);
   }
 
-  const promptText = new Map(corpusSeed.map((p) => [p.id, p.textEnglish]));
+  const promptText = new Map(corpusSeed.map((p) => [p.id, p]));
 
   return rows
     .filter((r) => consented.has(r.session.signerId))
@@ -170,7 +173,8 @@ export async function collectExportRows(): Promise<ExportRow[]> {
       signerId: session.signerId,
       promptId: session.promptId,
       category: session.category as CorpusCategory,
-      textEnglish: promptText.get(session.promptId) ?? "",
+      textEnglish: promptText.get(session.promptId)?.textEnglish ?? "",
+      textNepali: promptText.get(session.promptId)?.textNepali ?? "",
       storageKey: sequence.storageKey,
       extractorId: sequence.extractorId,
       frameCount: sequence.frameCount,

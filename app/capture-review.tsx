@@ -38,6 +38,7 @@ export default function CaptureReviewScreen() {
   const params = useLocalSearchParams<{
     sessionId?: string;
     text?: string;
+    nepali?: string;
     frameCount?: string;
     durationMs?: string;
     achievedFps?: string;
@@ -108,6 +109,7 @@ export default function CaptureReviewScreen() {
       <View style={styles.wrap}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.title}>Check your sample</Text>
+          {params.nepali ? <Text style={styles.promptNepali}>{params.nepali}</Text> : null}
           {params.text ? <Text style={styles.prompt}>“{params.text}”</Text> : null}
 
           <View style={styles.summaryCard}>
@@ -195,7 +197,8 @@ const styles = StyleSheet.create({
   wrap: { flex: 1 },
   content: { padding: 20, gap: 16 },
   title: { color: "#102A43", fontSize: 28, lineHeight: 35, fontWeight: "700" },
-  prompt: { color: "#486581", fontSize: 17, lineHeight: 25, fontStyle: "italic" },
+  promptNepali: { color: "#102A43", fontSize: 20, lineHeight: 30, fontWeight: "600" },
+  prompt: { color: "#486581", fontSize: 15, lineHeight: 22, fontStyle: "italic" },
   summaryCard: { backgroundColor: "#102A43", borderRadius: 22, padding: 20, gap: 14 },
   summaryLabel: {
     color: "#9FB3C8",

@@ -12,10 +12,11 @@ import { formatElapsed } from "@/lib/format-elapsed";
 import type { LandmarkFrame } from "@/shared/landmarks";
 
 export default function CaptureScreen() {
-  const { sessionId, text } = useLocalSearchParams<{
+  const { sessionId, text, nepali } = useLocalSearchParams<{
     sessionId?: string;
     promptId?: string;
     text?: string;
+    nepali?: string;
   }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(false);
@@ -68,6 +69,7 @@ export default function CaptureScreen() {
         params: {
           sessionId: sessionId ?? "",
           text: text ?? "",
+          nepali: nepali ?? "",
           frameCount: String(summary.frameCount),
           durationMs: String(summary.durationMs),
           achievedFps: String(Math.round(summary.achievedFps)),
@@ -143,7 +145,8 @@ export default function CaptureScreen() {
           </View>
 
           <View style={styles.controlCard}>
-            {text ? <Text style={styles.promptText}>{text}</Text> : null}
+            {nepali ? <Text style={styles.promptText}>{nepali}</Text> : null}
+            {text ? <Text style={styles.promptEnglish}>{text}</Text> : null}
             <Text style={styles.controlText}>
               {isCapturing
                 ? `${frameCount} motion frames read. Tap stop when you finish.`
@@ -250,7 +253,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   controlCard: { backgroundColor: "rgba(255,255,255,0.96)", borderRadius: 23, padding: 20, gap: 8 },
-  promptText: { color: "#102A43", fontSize: 20, lineHeight: 27, fontWeight: "700" },
+  promptText: { color: "#102A43", fontSize: 21, lineHeight: 32, fontWeight: "700" },
+  promptEnglish: { color: "#627D98", fontSize: 14, lineHeight: 20 },
   controlText: { color: "#486581", fontSize: 14, lineHeight: 20, marginBottom: 6 },
   recordButton: {
     minHeight: 54,

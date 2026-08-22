@@ -115,6 +115,7 @@ describe("exports", () => {
     promptId: "B-02",
     category: "interrogative",
     textEnglish: "Where is the hospital?",
+    textNepali: "अस्पताल कहाँ छ?",
     storageKey: "sequences/signer-7/s-1.json.gz",
     extractorId: "fixture@1",
     frameCount: 120,
