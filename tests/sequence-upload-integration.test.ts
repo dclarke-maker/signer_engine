@@ -24,11 +24,15 @@ const SIGNER = 5150;
 
 /**
  * Exercises the full collection path against a real database and object store.
- * Skipped unless DATABASE_URL is set:
+ * Both must be configured, not just the database - guarding on DATABASE_URL
+ * alone made this fail with a DNS error when only MariaDB was up, which reads
+ * like a code fault rather than a missing service:
  *   DATABASE_URL=mysql://... OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9010 \
  *     pnpm vitest run tests/sequence-upload-integration.test.ts
  */
-describe.skipIf(!process.env.DATABASE_URL)("collection path", () => {
+const configured = !!process.env.DATABASE_URL && !!process.env.OBJECT_STORAGE_ENDPOINT;
+
+describe.skipIf(!configured)("collection path", () => {
   beforeAll(async () => {
     const db = (await getDb())!;
     await db.delete(captureSessions).where(eq(captureSessions.signerId, SIGNER));
@@ -138,7 +142,29 @@ describe.skipIf(!process.env.DATABASE_URL)("collection path", () => {
 
   it("supersedes the previous stored session on a redo", async () => {
     const db = (await getDb())!;
-    const done = (await getSignerProgress(SIGNER)).completedPromptIds[0];
+    // Self-contained: relying on an earlier test's stored session made this
+    // fail with "Unknown prompt: undefined" whenever that test was skipped.
+    const done = "C-05";
+    const first = await startCaptureSession({ signerId: SIGNER, promptId: done });
+    await storeSequenceForSession({
+      sessionId: first.id,
+      payload: {
+        schemaVersion: 1,
+        sessionId: first.id,
+        promptId: done,
+        category: "negation",
+        extractorId: "fixture@1",
+        targetFps: 30,
+        achievedFps: 30,
+        frameCount: 1,
+        durationMs: 33,
+        frames: [],
+      },
+      storageKey: `sequences/signer-${SIGNER}/${first.id}.json.gz`,
+      sizeBytes: 10,
+      detections: [],
+    });
+
     await startCaptureSession({ signerId: SIGNER, promptId: done });
     const rows = await db
       .select()

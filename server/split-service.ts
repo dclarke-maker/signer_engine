@@ -26,8 +26,20 @@ export function assignSplits(signerIds: number[], seed: string): SplitAssignment
   );
 
   const total = ordered.length;
-  const trainCount = Math.round(total * SPLIT_RATIOS.train);
-  const validationCount = Math.round(total * SPLIT_RATIOS.validation);
+  let trainCount = Math.round(total * SPLIT_RATIOS.train);
+  let validationCount = Math.round(total * SPLIT_RATIOS.validation);
+
+  // Plain rounding starves the smaller splits on modest rosters - five signers
+  // round to 4/1/0. An empty test split means no held-out evaluation at all,
+  // which would invalidate every reported metric without any visible failure,
+  // so once there are enough signers to fill three splits, each gets at least
+  // one. At study scale (30-40) this never binds.
+  if (total >= 3) {
+    validationCount = Math.max(1, validationCount);
+    if (total - trainCount - validationCount < 1) {
+      trainCount = total - validationCount - 1;
+    }
+  }
 
   return ordered.map((signerId, index) => ({
     signerId,

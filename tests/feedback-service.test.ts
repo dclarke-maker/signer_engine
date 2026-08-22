@@ -82,7 +82,15 @@ describe("feedback router", () => {
     ).rejects.toThrow();
   });
 
-  it("surfaces a clean error when the database is unavailable", async () => {
+});
+
+/**
+ * These assert the no-database behaviour, so they only hold when there is no
+ * database. Guarding on the absence of DATABASE_URL keeps them from failing
+ * against a live one, where the correct outcome is the opposite.
+ */
+describe.skipIf(!!process.env.DATABASE_URL)("feedback without a database", () => {
+  it("surfaces a clean error rather than silently dropping research data", async () => {
     const caller = appRouter.createCaller(anonymousContext());
     await expect(
       caller.feedback.submit({ translationJobId: "j-1", vote: "accurate" }),
@@ -91,7 +99,7 @@ describe("feedback router", () => {
 
   it("accepts a directional vote with no ratings, so scales never block it", async () => {
     const caller = appRouter.createCaller(anonymousContext());
-    // Reaches the database layer, which is the proof it passed validation.
+    // Reaching the database layer is the proof it passed validation.
     await expect(
       caller.feedback.submit({ translationJobId: "j-1", vote: "needs_correction" }),
     ).rejects.toThrow(/could not be recorded/i);

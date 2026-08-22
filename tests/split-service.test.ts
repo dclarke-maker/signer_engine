@@ -46,6 +46,29 @@ describe("signer-independent assignment", () => {
     expect(new Set(tiny.map((a) => a.signerId)).size).toBe(2);
   });
 
+  it("never leaves validation or test empty once three signers exist", () => {
+    // Plain rounding starves the smaller splits on modest rosters - five
+    // signers round to 4/1/0, and an empty test split means no held-out
+    // evaluation at all, which silently invalidates every reported metric.
+    for (const size of [3, 4, 5, 6, 7, 8, 10, 12]) {
+      const roster = Array.from({ length: size }, (_, i) => i + 1);
+      const assigned = assignSplits(roster, "seed-a");
+      for (const split of ["train", "validation", "test"] as const) {
+        expect(
+          assigned.filter((a) => a.split === split).length,
+          `${split} was empty for a roster of ${size}`,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("still approximates the target ratios at study scale", () => {
+    const assigned = assignSplits(signers, "study-seed-1");
+    const share = (s: string) => assigned.filter((a) => a.split === s).length / signers.length;
+    expect(share("train")).toBeGreaterThan(0.6);
+    expect(share("train")).toBeLessThan(0.78);
+  });
+
   it("carries every category into every split in equal proportion", () => {
     // Each signer records the full corpus, so partitioning by signer is
     // stratified by construction. This checks the resulting corpus, not the
@@ -96,6 +119,7 @@ describe("exports", () => {
     extractorId: "fixture@1",
     frameCount: 120,
     durationMs: 4000,
+    achievedFps: 30,
     split: "train",
     nmmTags: [
       {
@@ -131,7 +155,7 @@ describe("exports", () => {
   });
 
   it("builds ELAN tiers with temporal boundaries in milliseconds", () => {
-    const tiers = buildElanTiers({ ...row, achievedFps: 30 });
+    const tiers = buildElanTiers(row);
     const sentence = tiers.find((t) => t.tier === "sentence")!;
     expect(sentence.annotations[0]).toEqual({
       start: 0,

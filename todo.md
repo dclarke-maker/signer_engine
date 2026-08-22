@@ -17,7 +17,6 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 ## Elsewhere
 
 - [ ] Implement the workshop calibration buffer itself. The environment contract, consent scope, and retention ceiling exist; the encrypted transient store and scheduled purge do not.
-- [ ] Wire the export services to a command or endpoint. `buildTrainingJsonl`, `buildElanTiers`, and `exportManifest` are implemented and tested but nothing calls them yet.
 - [ ] Retire or quarantine unrelated Manus template scaffolding: `server/_core/{llm,imageGeneration,voiceTranscription,oauth}.ts`, `server/storage.ts`, the `users` table, `app/oauth/callback.tsx`.
 
 ## Known issues found during implementation

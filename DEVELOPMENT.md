@@ -82,6 +82,20 @@ The one exception is the **workshop calibration buffer**, which lets the NDFN Li
 
 See `design.md` §3 for the full data flow and the four security guarantees.
 
+## Exporting the corpus
+
+Phase 3 needs the corpus out of the system for ELAN annotation and ISL pre-training:
+
+```bash
+DATABASE_URL=mysql://... STUDY_SPLIT_SEED=signbridge-study-v1 pnpm export:corpus [outputDir]
+```
+
+It writes `train.jsonl`, `validation.jsonl`, `test.jsonl`, one ELAN tier file per session under `elan/`, and a `manifest.json` recording the seed, rule version, extractor, consent version, and row count.
+
+Only `stored` sessions are exported. Superseded sessions are kept for audit but are no longer canonical, skipped prompts have no sequence, and signers without a current consent grant are excluded in the query - a withdrawal cannot survive by being filtered somewhere downstream and forgotten.
+
+The command refuses to run without `DATABASE_URL`, says so plainly when there is nothing to export rather than writing three empty files, and warns loudly if any split ends up empty: metrics computed against an empty split are meaningless, and a silent zero would be reported as a result.
+
 ## Building the mobile client
 
 Landmark extraction runs as a native frame processor, so **Expo Go cannot run this app**. Generate the native projects and build a development client:
