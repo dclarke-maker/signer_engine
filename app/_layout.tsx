@@ -89,6 +89,12 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="sign-in" options={{ presentation: "fullScreenModal" }} />
             <Stack.Screen name="set-password" options={{ presentation: "fullScreenModal" }} />
+            <Stack.Screen name="consent" options={{ presentation: "fullScreenModal" }} />
+            <Stack.Screen name="prompt-session" />
+            <Stack.Screen name="capture" />
+            <Stack.Screen name="capture-review" />
+            <Stack.Screen name="live-translate" />
+            <Stack.Screen name="feedback" />
             <Stack.Screen name="oauth/callback" />
           </Stack>
           <StatusBar style="auto" />

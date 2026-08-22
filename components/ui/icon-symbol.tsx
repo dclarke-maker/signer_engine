@@ -24,6 +24,7 @@ const MAPPING = {
   "arrow.clockwise": "refresh",
   "hand.raised.fill": "front-hand",
   "text.bubble.fill": "chat",
+  "chart.bar.fill": "bar-chart",
 } as IconMapping;
 
 /**

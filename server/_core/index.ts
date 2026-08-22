@@ -53,12 +53,16 @@ async function startServer() {
     next();
   });
 
+  // Registered before the JSON body parser: the sequence route needs the raw
+  // bytes, and a global express.json() would consume the stream first and hand
+  // the handler an already-parsed object instead of a Buffer.
+  registerSequenceUploadRoute(app);
+
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   registerStorageProxy(app);
   registerOAuthRoutes(app);
-  registerSequenceUploadRoute(app);
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });

@@ -11,13 +11,7 @@ export default function WorkspaceScreen() {
   const activeStage = workflowQuery.data?.stage ?? ("capture" as WorkflowStage);
   const details = stageDetails[activeStage];
 
-  // The participant screens - consent, prompt session, live translate - land in
-  // a later task. Until then the stage action is inert rather than pointing at a
-  // route that no longer exists.
-  const screensReady = false;
-
   const openActiveStage = () => {
-    if (!screensReady) return;
     if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push((activeStage === "capture" ? "/prompt-session" : "/live-translate") as never);
   };
@@ -52,18 +46,11 @@ export default function WorkspaceScreen() {
           <Text style={styles.cardDescription}>{details.description}</Text>
 
           <Pressable
-            disabled={!screensReady}
             onPress={openActiveStage}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              !screensReady && styles.primaryButtonDisabled,
-              pressed && styles.pressed,
-            ]}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
           >
-            <Text style={styles.primaryButtonText}>
-              {screensReady ? details.action : "Opening shortly"}
-            </Text>
-            {screensReady ? <Text style={styles.buttonArrow}>›</Text> : null}
+            <Text style={styles.primaryButtonText}>{details.action}</Text>
+            <Text style={styles.buttonArrow}>›</Text>
           </Pressable>
         </View>
 
@@ -107,7 +94,6 @@ const styles = StyleSheet.create({
   cardTitle: { color: "#102A43", fontSize: 23, lineHeight: 29, fontWeight: "700" },
   cardDescription: { color: "#486581", fontSize: 16, lineHeight: 23 },
   primaryButton: { minHeight: 52, borderRadius: 15, backgroundColor: "#0F766E", marginTop: 6, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  primaryButtonDisabled: { opacity: 0.55 },
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.92 },
   primaryButtonText: { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
   buttonArrow: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 28 },

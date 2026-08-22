@@ -43,6 +43,12 @@ export function resolveUploadRejection(input: {
   return null;
 }
 
+function wasParsedElsewhere(body: unknown): boolean {
+  if (body === undefined || body === null) return false;
+  if (typeof body === "object") return Object.keys(body as object).length > 0;
+  return true;
+}
+
 export function registerSequenceUploadRoute(app: Express) {
   app.post(
     "/api/sessions/:sessionId/sequence",
@@ -51,6 +57,16 @@ export function registerSequenceUploadRoute(app: Express) {
       const token = extractBearerToken(req.headers.authorization);
       const signer = token ? await getSignerFromSessionToken(token) : null;
       const session = signer ? await getCaptureSession(req.params.sessionId) : null;
+      // Express leaves req.body as {} for a content type this route's raw
+      // parser does not handle, which is normal. A *populated* non-Buffer body
+      // means another parser consumed the stream first - reporting "empty"
+      // there would send someone hunting a client bug that does not exist.
+      if (!Buffer.isBuffer(req.body) && wasParsedElsewhere(req.body)) {
+        res.status(500).json({
+          error: "The sequence route received a parsed body. Register it before express.json().",
+        });
+        return;
+      }
       const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
 
       const rejection = resolveUploadRejection({
