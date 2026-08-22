@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# pnpm content-addressable store (created when the store-dir is set inside the repo)
+.pnpm-store/
+
 # Expo
 .expo/
 dist/
