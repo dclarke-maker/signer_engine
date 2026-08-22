@@ -5,12 +5,13 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 
 ## Blocking
 
-- [ ] **Resolve the frame-processor dependency mismatch.** `react-native-worklets@0.5.1` is installed; Vision Camera v4 frame processors require `react-native-worklets-core`. Blocks the native extractor only.
-- [ ] **Provide a machine with the native toolchain.** `expo prebuild` and a device build need Xcode and/or the Android SDK. The current development host has neither — nor Node itself, so all work runs in a container.
+- [ ] **Provide a machine with the native toolchain.** `expo prebuild` and a device build need Xcode and/or the Android SDK. The current development host has neither — nor Node itself, so all work so far has run in a container. This is the only genuine blocker left.
+
+> **Dependency conflict resolved on inspection.** An earlier note claimed Vision Camera needed `react-native-worklets-core`, conflicting with the installed `react-native-worklets@0.5.1`. That is true of **v4.7.3** but not of **v5.2.3**, which replaced worklets-core with `react-native-nitro-modules` and `react-native-nitro-image`. Targeting v5 removes the conflict; the installed `react-native-worklets` belongs to Reanimated 4 and is unrelated. Compatibility with Expo SDK 54 / RN 0.81 still needs confirming by an actual build.
 
 ## Remaining work
 
-- [ ] Add `react-native-vision-camera` and a MediaPipe Tasks config plugin; move the build to `expo prebuild` + custom dev client.
+- [ ] Add `react-native-vision-camera@^5` (plus `react-native-nitro-modules` and `react-native-nitro-image`) and a MediaPipe Tasks config plugin; move the build to `expo prebuild` + custom dev client.
 - [ ] Implement the MediaPipe Tasks extractor behind the existing `LandmarkExtractor` interface and swap the native branch in `lib/extractors/index.ts`. No screen changes required.
 - [ ] Verify stream sizes on a physical device: face 468 (iris refinement off), pose 33, hand 21 per hand, 20fps or better.
 - [ ] Implement the workshop calibration buffer itself. The environment contract, consent scope, and retention ceiling exist; the encrypted transient store and scheduled purge do not.

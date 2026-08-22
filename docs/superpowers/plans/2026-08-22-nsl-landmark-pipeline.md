@@ -3301,7 +3301,7 @@ git commit -m "feat: signer-independent stratified splits and training/ELAN expo
 
 ## Task 11a: Mobile screens on the fixture extractor
 
-**Not blocked by the native build.** Every screen here runs against `createFixtureExtractor`, so the whole participant journey is exercisable before `react-native-worklets-core` is resolved. Task 11b swaps in the native extractor behind the same interface without touching these screens.
+**Not blocked by the native build.** Every screen here runs against `createFixtureExtractor`, so the whole participant journey is exercisable before the native extractor exists. Task 11b swaps in the native extractor behind the same interface without touching these screens.
 
 **Files:**
 - Create: `lib/format-elapsed.ts`, `lib/upload-sequence.ts`, `lib/capture-buffer.ts`
@@ -3496,7 +3496,7 @@ git commit -m "feat: prompt-driven capture screens, live translate, Likert feedb
 
 ## Task 11b: Native MediaPipe extractor
 
-**Blocked** until the `react-native-worklets-core` mismatch is resolved (see Global Constraints). Everything else in this plan ships without it.
+**Blocked** only by the absence of a native toolchain (Xcode / Android SDK). The dependency conflict noted earlier does not apply to Vision Camera v5. Everything else in this plan ships without this task.
 
 **Files:**
 - Create: `lib/extractors/mediapipe-extractor.ts`
@@ -3510,7 +3510,7 @@ git commit -m "feat: prompt-driven capture screens, live translate, Likert feedb
 
 ```bash
 npx expo install react-native-vision-camera
-pnpm add react-native-worklets-core
+pnpm add react-native-nitro-modules react-native-nitro-image
 npx expo prebuild --clean
 ```
 
@@ -3710,7 +3710,7 @@ Replace every "video recording" reference with "landmark sequence"; the table ro
 
 - [ ] **Step 4: Reconcile `todo.md`**
 
-Tick every item this plan completed. Leave the `react-native-worklets-core` item open if Task 11b has not run.
+Tick every item this plan completed. Leave the native-toolchain item open if Task 11b has not run.
 
 - [ ] **Step 5: Full verification**
 
