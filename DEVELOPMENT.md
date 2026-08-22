@@ -121,10 +121,24 @@ Landmark extraction is a custom Vision Camera frame-processor plugin wrapping Me
 
 The plugin returns one packed `Float32Array` per frame rather than a nested map: a holistic result is ~543 landmarks, and bridging that as objects at 30fps would dominate the frame budget. `holistic-buffer.ts` defines the layout, decodes it, and its `encodeHolisticBuffer` is an executable specification the Swift and Kotlin writers must match.
 
-Fetch the model before prebuilding — it is not committed:
+The model is committed at `native/holistic/models/holistic_landmarker.task` (13 MB). EAS runs `expo prebuild` on its own machines, so anything excluded from the repository never reaches the build — and the upstream URL points at `latest`, which would let the model change underneath the study. See that directory's README for the pinned checksum.
+
+### Building with EAS
+
+The native toolchain runs in the cloud, so no local Xcode or Android SDK is needed:
 
 ```bash
-./scripts/fetch-holistic-model.sh
+npx eas-cli@latest login
+npx eas-cli@latest build --profile development --platform android
+```
+
+`eas.json` defines three profiles. `development` produces a development client with `expo-dev-client`, which is what the frame processor needs; `preview` is an internal release build; `production` is store-bound. Android development builds need no paid account. iOS device builds require an Apple Developer membership; `--platform ios` with `"simulator": true` avoids that if a simulator build is enough.
+
+Once the development client is installed, `pnpm dev` drives it as usual.
+
+### Building locally instead
+
+```bash
 npx expo prebuild --clean
 pnpm ios      # or: pnpm android
 ```

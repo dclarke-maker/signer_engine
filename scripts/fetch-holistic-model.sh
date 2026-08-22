@@ -17,3 +17,7 @@ echo "Downloading holistic_landmarker.task ..."
 curl -fL --progress-bar "$URL" -o "$DEST.partial"
 mv "$DEST.partial" "$DEST"
 echo "Saved to $DEST"
+echo
+echo "Verify the checksum against native/holistic/models/README.md before"
+echo "committing a replacement - a different model changes the pipeline."
+shasum -a 256 "$DEST" 2>/dev/null || sha256sum "$DEST" 2>/dev/null || true
