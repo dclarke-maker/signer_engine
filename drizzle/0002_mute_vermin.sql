@@ -1,0 +1,1 @@
+DROP TABLE `signer_captures`;

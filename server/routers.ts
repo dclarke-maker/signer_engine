@@ -5,7 +5,6 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { sendSignerInvitation } from "./invitation-mail";
 import {
   acceptSignerInvitation,
-  createCaptureForSigner,
   createSignerInvitation,
   deleteSignerSession,
   getSignerFromSessionToken,
@@ -81,33 +80,6 @@ export const appRouter = router({
           expiresAt: invitation.expiresAt,
         });
         return { signer: invitation.signer, expiresAt: invitation.expiresAt, status: "sent" as const };
-      }),
-  }),
-  capture: router({
-    submit: publicProcedure
-      .input(
-        z.object({
-          clientRecordedAt: z.string().datetime(),
-          mimeType: z.literal("video/mp4").default("video/mp4"),
-        }),
-      )
-      .mutation(async ({ ctx, input }) => {
-        const token = extractBearerToken(ctx.req.headers.authorization);
-        const signer = token ? await getSignerFromSessionToken(token) : null;
-        if (!signer) throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before submitting a capture." });
-        const capture = await createCaptureForSigner({
-          signerId: signer.id,
-          mimeType: input.mimeType,
-          clientRecordedAt: new Date(input.clientRecordedAt),
-        });
-        return {
-          id: capture.id,
-          status: "accepted" as const,
-          uploadKey: capture.uploadKey,
-          signerId: signer.id,
-          clientRecordedAt: input.clientRecordedAt,
-          message: "Capture metadata accepted for the authenticated signer.",
-        };
       }),
   }),
   evaluation: router({

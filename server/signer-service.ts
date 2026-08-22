@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
 
-import { signerAccounts, signerCaptures, signerInvitations, signerSessions, type SignerAccount } from "../drizzle/schema";
+import { signerAccounts, signerInvitations, signerSessions, type SignerAccount } from "../drizzle/schema";
 import { getDb } from "./db";
 import {
   generateOpaqueToken,
@@ -113,18 +113,4 @@ export async function getSignerFromSessionToken(token: string) {
 export async function deleteSignerSession(token: string) {
   const db = await requireDb();
   await db.delete(signerSessions).where(eq(signerSessions.tokenHash, hashOpaqueToken(token)));
-}
-
-export async function createCaptureForSigner(input: { signerId: number; mimeType: string; clientRecordedAt: Date }) {
-  const db = await requireDb();
-  const id = crypto.randomUUID();
-  const uploadKey = `recordings/signer-${input.signerId}/${id}.mp4`;
-  await db.insert(signerCaptures).values({
-    id,
-    signerId: input.signerId,
-    mimeType: input.mimeType,
-    uploadKey,
-    clientRecordedAt: input.clientRecordedAt,
-  });
-  return { id, uploadKey };
 }

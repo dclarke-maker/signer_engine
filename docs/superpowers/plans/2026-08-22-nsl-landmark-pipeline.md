@@ -26,11 +26,23 @@
 
 ### Prerequisites — do these before Task 1
 
+**Node is not installed on this host** (no Homebrew, no nvm, no Volta). Rancher Desktop provides Docker, so the toolchain runs in a container. Build the image once:
+
 ```bash
-cd /Users/mac/Development/APU/Final_Project
-pnpm install                 # node_modules is currently absent
-git init                     # not currently a git repository; commit steps below depend on it
-git add -A && git commit -m "chore: baseline before NSL landmark pipeline"
+docker build -t signbridge-dev:latest <toolchain-dir>   # node:22-alpine + pnpm@9.12.0 + git
+```
+
+Then every `pnpm …` command in this plan runs through the shim:
+
+```bash
+docker run --rm -v "$PWD":/app -v signbridge-pnpm-store:/pnpm-store -w /app \
+  signbridge-dev:latest sh -lc 'pnpm install'
+```
+
+Waves 1–3 (Tasks 1–10) and Tasks 11a/11c run entirely in the container. **Task 11b needs a real macOS toolchain** — Xcode, Android SDK, and a native Node — because `expo prebuild` and the device build cannot run in this container.
+
+```bash
+git init && git add -A && git commit -m "chore: baseline before NSL landmark pipeline"
 ```
 
 `pnpm drizzle-kit generate` reads `drizzle.config.ts`, which throws unless `DATABASE_URL` is set. It does not connect — the variable only needs to be present:
@@ -304,7 +316,7 @@ Expected: PASS (3 suites)
 
 - [ ] **Step 7: Fix the now-broken existing references**
 
-`app/(tabs)/index.tsx` reads `stageDetails[activeStage]` and routes on `activeStage === "capture"`. Change its evaluation branch target from `/evaluation` to `/live-translate`, and its fallback stage cast from `"capture" as WorkflowStage` — that stays valid. `server/workflow-config.ts` must resolve the renamed stage:
+`app/(tabs)/index.tsx` reads `stageDetails[activeStage]` and routes on `activeStage === "capture"`. **Leave its route targets alone** — `/live-translate` does not exist until Task 11a, and repointing at a missing route now would break navigation. The rename is type-safe as it stands because the branch is a cast. `server/workflow-config.ts` must resolve the renamed stage:
 
 ```ts
 // server/workflow-config.ts
@@ -344,15 +356,42 @@ git commit -m "feat: shared landmark, corpus, and workflow vocabularies"
 ## Task 2: Fixture landmark extractor
 
 **Files:**
+- Create: `vitest.config.ts`
 - Create: `lib/extractors/fixture-extractor.ts`
 - Create: `tests/fixtures/landmark-frames.ts`
 - Test: `tests/fixture-extractor.test.ts`
+
+**Prerequisite — vitest cannot resolve the `@/` alias.** Files under `lib/` and `app/` import via `@/…`, which Metro resolves from `tsconfig.json` `paths`. Vitest honours neither, and the project has no vitest config, so `lib/extractors/fixture-extractor.ts` would fail to resolve `@/shared/landmarks`. Add the config before anything under `lib/` is imported by a test:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./", import.meta.url)),
+      "@shared": fileURLToPath(new URL("./shared/", import.meta.url)),
+    },
+  },
+  test: {
+    include: ["tests/**/*.test.ts"],
+    environment: "node",
+  },
+});
+```
 
 **Interfaces:**
 - Consumes: `LandmarkExtractor`, `LandmarkFrame`, `LandmarkSequenceSummary`, `HAND_LANDMARK_COUNT`, `FACE_LANDMARK_COUNT`, `POSE_LANDMARK_COUNT` from `shared/landmarks`.
 - Produces: `createFixtureExtractor(frames: LandmarkFrame[]): LandmarkExtractor`; `makeLandmarks(count: number, seed: number): Landmark[]`, `makeFrame(overrides): LandmarkFrame`, `makeSequence(options): LandmarkFrame[]` from `tests/fixtures/landmark-frames`.
 
-- [ ] **Step 1: Write the fixture builders**
+- [ ] **Step 1: Add `vitest.config.ts`** (see the prerequisite block above), then confirm the existing suite still runs:
+
+Run: `pnpm vitest run`
+Expected: the Task 1 suites still pass; no "cannot resolve" errors.
+
+- [ ] **Step 2: Write the fixture builders**
 
 ```ts
 // tests/fixtures/landmark-frames.ts
@@ -399,7 +438,7 @@ export function makeSequence(options: {
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 3: Write the failing test**
 
 ```ts
 // tests/fixture-extractor.test.ts
@@ -461,12 +500,12 @@ describe("fixture landmark extractor", () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [ ] **Step 4: Run test to verify it fails**
 
 Run: `pnpm vitest run tests/fixture-extractor.test.ts`
 Expected: FAIL — `Failed to resolve import "../lib/extractors/fixture-extractor"`
 
-- [ ] **Step 4: Write the implementation**
+- [ ] **Step 5: Write the implementation**
 
 ```ts
 // lib/extractors/fixture-extractor.ts
@@ -530,15 +569,15 @@ function summarize(frames: LandmarkFrame[]): LandmarkSequenceSummary {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 6: Run tests to verify they pass**
 
 Run: `pnpm vitest run tests/fixture-extractor.test.ts`
 Expected: PASS (4 tests)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add lib/extractors/fixture-extractor.ts tests/fixture-extractor.test.ts tests/fixtures/landmark-frames.ts
+git add vitest.config.ts lib/extractors/fixture-extractor.ts tests/fixture-extractor.test.ts tests/fixtures/landmark-frames.ts
 git commit -m "feat: deterministic fixture landmark extractor"
 ```
 
@@ -3260,19 +3299,20 @@ git commit -m "feat: signer-independent stratified splits and training/ELAN expo
 
 ---
 
-## Task 11: Native extractor, mobile screens, and documentation
+## Task 11a: Mobile screens on the fixture extractor
+
+**Not blocked by the native build.** Every screen here runs against `createFixtureExtractor`, so the whole participant journey is exercisable before `react-native-worklets-core` is resolved. Task 11b swaps in the native extractor behind the same interface without touching these screens.
 
 **Files:**
-- Create: `lib/extractors/mediapipe-extractor.ts`
+- Create: `lib/format-elapsed.ts`, `lib/upload-sequence.ts`, `lib/capture-buffer.ts`
 - Create: `app/consent.tsx`, `app/prompt-session.tsx`, `app/live-translate.tsx`, `app/(tabs)/progress.tsx`
 - Modify: `app/capture.tsx`, `app/capture-review.tsx`, `app/feedback.tsx`, `app/(tabs)/settings.tsx`, `app/(tabs)/_layout.tsx`
 - Delete: `app/evaluation.tsx`, `app/capture-submitted.tsx`
-- Modify: `lib/format-elapsed.ts` (create), `DEVELOPMENT.md`, `docker-compose.yml`, `docker-compose.hetzner.yml`, `app.config.ts`
 - Test: `tests/format-elapsed.test.ts`
 
 **Interfaces:**
-- Consumes: `LandmarkExtractor` from `shared/landmarks`; `createFixtureExtractor`; the `capture`, `consent`, `translation`, and `feedback` routers.
-- Produces: `createMediaPipeExtractor()`, `formatElapsed(ms)`, `uploadSequence(input)`.
+- Consumes: `LandmarkExtractor`, `LandmarkFrame`, `LandmarkSequencePayload` from `shared/landmarks`; `createFixtureExtractor` from Task 2; the `capture`, `consent`, `translation`, and `feedback` routers.
+- Produces: `formatElapsed(ms): string`, `uploadSequence(payload): Promise<UploadResult>`, `setCaptureBuffer(frames)` / `takeCaptureBuffer(): LandmarkFrame[]`, `getExtractor(): LandmarkExtractor`.
 
 - [ ] **Step 1: Write the failing test for the elapsed timer**
 
@@ -3322,7 +3362,151 @@ export function formatElapsed(ms: number): string {
 Run: `pnpm vitest run tests/format-elapsed.test.ts`
 Expected: PASS (3 tests)
 
-- [ ] **Step 5: Install the native dependencies and prebuild**
+- [ ] **Step 5: Add the extractor selector**
+
+```ts
+// lib/extractors/index.ts
+import { Platform } from "react-native";
+
+import { createFixtureExtractor } from "./fixture-extractor";
+import type { LandmarkExtractor } from "@/shared/landmarks";
+import { demoSequence } from "./demo-sequence";
+
+/**
+ * Task 11b replaces the native branch with `createMediaPipeExtractor()`.
+ * Nothing above this function changes when it does.
+ */
+export function getExtractor(): LandmarkExtractor {
+  if (Platform.OS === "web") return createFixtureExtractor(demoSequence);
+  return createFixtureExtractor(demoSequence);
+}
+```
+
+`lib/extractors/demo-sequence.ts` exports a short, checked-in `LandmarkFrame[]` built with the same generator as `tests/fixtures/landmark-frames.ts`, so the screens have something to render before a camera exists.
+
+- [ ] **Step 6: Add the in-memory capture buffer**
+
+Frames must never travel as a route param — a serialized 400-frame payload in a URL is both broken and a privacy smell. Keep them in a module ref that the review screen drains exactly once:
+
+```ts
+// lib/capture-buffer.ts
+import type { LandmarkFrame } from "@/shared/landmarks";
+
+let buffer: LandmarkFrame[] = [];
+
+export function setCaptureBuffer(frames: LandmarkFrame[]) {
+  buffer = frames;
+}
+
+/** Drains the buffer. Calling twice returns an empty array by design. */
+export function takeCaptureBuffer(): LandmarkFrame[] {
+  const frames = buffer;
+  buffer = [];
+  return frames;
+}
+
+export function clearCaptureBuffer() {
+  buffer = [];
+}
+```
+
+- [ ] **Step 7: Rewrite `app/capture.tsx`**
+
+Remove `useMicrophonePermissions`, `recordAsync`, `stopRecording`, and every reference to `recordingUri`. The screen now:
+
+- requests **camera permission only**, with the copy `"SignBridge reads motion points from the camera. No video is recorded or saved."` on Mist Blue `#E6FFFB`;
+- shows the prompt sentence and its category badge above the framing guide;
+- runs `getExtractor()`, buffering frames via `setCaptureBuffer`;
+- shows the elapsed timer via `formatElapsed`, and a live "reading motion points" indicator;
+- on **Stop**, navigates to `/capture-review` with the `sessionId` only.
+
+- [ ] **Step 8: Rewrite `app/capture-review.tsx`**
+
+Replace the video placeholder with the sequence summary: frame count, duration via `formatElapsed`, achieved fps, per-stream coverage bars. The privacy line becomes `"Only anonymous motion points are sent. No video exists on this device."` Submit drains the buffer and POSTs it via `uploadSequence`.
+
+- [ ] **Step 9: Add `lib/upload-sequence.ts`**
+
+```ts
+import { getApiBaseUrl } from "@/constants/oauth";
+import { getSignerSessionToken } from "@/lib/signer-session";
+import type { LandmarkSequencePayload } from "@/shared/landmarks";
+
+export type UploadResult = { sessionId: string; status: string; nmmTags: number };
+
+export async function uploadSequence(payload: LandmarkSequencePayload): Promise<UploadResult> {
+  const token = await getSignerSessionToken();
+  const response = await fetch(`${getApiBaseUrl()}/api/sessions/${payload.sessionId}/sequence`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "The sequence could not be submitted.");
+  }
+  return (await response.json()) as UploadResult;
+}
+```
+
+- [ ] **Step 10: Add the new screens**
+
+- `app/consent.tsx` — study purpose, what is and is not collected (mirroring §3.2's four guarantees), withdrawal rights, and a single **I agree to participate** action calling `consent.grant`. Blocks navigation to capture until `consent.status` reports `granted`.
+- `app/prompt-session.tsx` — `capture.nextPrompt` result: sentence on a Mist Blue card, category badge, `n of 100` progress, and three actions — **Start signing**, **Skip this sentence** (with a reason sheet), **Redo previous**.
+- `app/live-translate.tsx` — replaces `app/evaluation.tsx`. Camera + `getExtractor()`, then `translation.request`, showing the English on Warm Sand `#FFF7ED` with the disclaimer `"This is an automated response. Please judge it against your signing."`
+- `app/(tabs)/progress.tsx` — `capture.progress`: per-category completion bars, totals, and skipped count. Register it in `app/(tabs)/_layout.tsx` with `IconSymbol name="chart.bar.fill"`.
+
+Delete `app/evaluation.tsx` and `app/capture-submitted.tsx` (the confirmation now lives inline on Prompt Session).
+
+- [ ] **Step 11: Extend `app/feedback.tsx` with the Likert scales**
+
+Keep the two verdict cards. Below them add three 1–5 scales — Naturalness, Grammaticality, Usefulness — each a row of five 48-point targets labelled at both ends. Submit calls `feedback.submit` then `feedback.rate`; the rating call is skipped if the participant leaves the scales untouched, so the directional vote is never blocked by them.
+
+- [ ] **Step 12: Update `app/(tabs)/settings.tsx`**
+
+Show the resolved `getApiBaseUrl()`, `Constants.expoConfig?.version`, the extractor id from `getExtractor().id`, the rule version, and consent status with a **Withdraw consent** action. Replace the privacy card copy with §3.2's four guarantees.
+
+- [ ] **Step 13: Verify no video path survives**
+
+```bash
+grep -rn "recordAsync\|recordingUri\|video/mp4\|putSignerRecording" app lib server shared tests
+```
+
+Expected: no matches outside a comment describing what the system does not do.
+
+- [ ] **Step 14: Run the full verification**
+
+```bash
+pnpm vitest run && pnpm check && pnpm lint
+```
+
+Expected: all tests pass, no TypeScript errors, no lint errors.
+
+- [ ] **Step 15: Commit**
+
+```bash
+git add -A
+git commit -m "feat: prompt-driven capture screens, live translate, Likert feedback"
+```
+
+---
+
+## Task 11b: Native MediaPipe extractor
+
+**Blocked** until the `react-native-worklets-core` mismatch is resolved (see Global Constraints). Everything else in this plan ships without it.
+
+**Files:**
+- Create: `lib/extractors/mediapipe-extractor.ts`
+- Modify: `lib/extractors/index.ts`, `app.config.ts`, `package.json`
+
+**Interfaces:**
+- Consumes: `LandmarkExtractor`, `LandmarkFrame`, stream-count constants from `shared/landmarks`.
+- Produces: `createMediaPipeExtractor(): LandmarkExtractor` — same interface as the fixture extractor, so no screen changes.
+
+- [ ] **Step 1: Install the native dependencies and prebuild**
 
 ```bash
 npx expo install react-native-vision-camera
@@ -3345,7 +3529,7 @@ Add the Vision Camera plugin and the camera permission strings to `app.config.ts
 
 Note: `enableMicrophonePermission: false` is deliberate. The proposal's pipeline has no audio channel, and requesting a permission the system never uses weakens the privacy claim.
 
-- [ ] **Step 6: Write `lib/extractors/mediapipe-extractor.ts`**
+- [ ] **Step 2: Write `lib/extractors/mediapipe-extractor.ts`**
 
 ```ts
 import {
@@ -3442,65 +3626,57 @@ export function createMediaPipeExtractor(): LandmarkExtractor {
 
 The `nativeExtractor` binding is the frame-processor plugin registered by the config plugin. Wire it in the same file with the Vision Camera `useFrameProcessor` hook in `app/capture.tsx`; keep the shape above so the interface contract does not change.
 
-- [ ] **Step 7: Rewrite `app/capture.tsx`**
-
-Remove `useMicrophonePermissions`, `recordAsync`, `stopRecording`, and every reference to `recordingUri`. The screen now:
-
-- requests **camera permission only**, with the copy `"SignBridge reads motion points from the camera. No video is recorded or saved."` on Mist Blue `#E6FFFB`;
-- shows the prompt sentence and its category badge above the framing guide;
-- runs `createMediaPipeExtractor()` on native and `createFixtureExtractor` on web, buffering frames in memory;
-- shows the elapsed timer via `formatElapsed`, and a live "reading motion points" indicator;
-- on **Stop**, navigates to `/capture-review` with the `sessionId` only — the buffered frames stay in a module-level ref, never a route param.
-
-- [ ] **Step 8: Rewrite `app/capture-review.tsx`**
-
-Replace the video placeholder with the sequence summary: frame count, duration via `formatElapsed`, achieved fps, per-stream coverage bars, and the detected NMM tags. The privacy line becomes `"Only anonymous motion points are sent. No video exists on this device."` Submit gzips the payload and POSTs it:
+- [ ] **Step 3: Swap the native branch in `lib/extractors/index.ts`**
 
 ```ts
-// lib/upload-sequence.ts
-import { getApiBaseUrl } from "@/constants/oauth";
-import { getSignerSessionToken } from "@/lib/signer-session";
-import type { LandmarkSequencePayload } from "@/shared/landmarks";
+import { Platform } from "react-native";
 
-export async function uploadSequence(payload: LandmarkSequencePayload) {
-  const token = await getSignerSessionToken();
-  const response = await fetch(`${getApiBaseUrl()}/api/sessions/${payload.sessionId}/sequence`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(payload),
-    credentials: "include",
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "The sequence could not be submitted.");
-  }
-  return (await response.json()) as { sessionId: string; status: string; nmmTags: number };
+import { createFixtureExtractor } from "./fixture-extractor";
+import { createMediaPipeExtractor } from "./mediapipe-extractor";
+import { demoSequence } from "./demo-sequence";
+import type { LandmarkExtractor } from "@/shared/landmarks";
+
+export function getExtractor(): LandmarkExtractor {
+  if (Platform.OS === "web") return createFixtureExtractor(demoSequence);
+  return createMediaPipeExtractor();
 }
 ```
 
-- [ ] **Step 9: Add the new screens**
+No screen changes: Task 11a consumes `getExtractor()` and the `LandmarkExtractor` interface, both unchanged.
 
-- `app/consent.tsx` — study purpose, what is and is not collected (mirroring §3.2's four guarantees), withdrawal rights, and a single **I agree to participate** action calling `consent.grant`. Blocks navigation to capture until `consent.status` reports `granted`.
-- `app/prompt-session.tsx` — `capture.nextPrompt` result: sentence on a Mist Blue card, category badge, `n of 100` progress, and three actions — **Start signing**, **Skip this sentence** (with a reason sheet), **Redo previous**.
-- `app/live-translate.tsx` — replaces `app/evaluation.tsx`. Camera + extractor, then `translation.request`, showing the English on Warm Sand `#FFF7ED` with the disclaimer `"This is an automated response. Please judge it against your signing."`
-- `app/(tabs)/progress.tsx` — `capture.progress`: per-category completion bars, totals, and skipped count. Register it in `app/(tabs)/_layout.tsx` with `IconSymbol name="chart.bar.fill"`.
+- [ ] **Step 4: Verify stream sizes against a real device**
 
-Delete `app/evaluation.tsx` and `app/capture-submitted.tsx` (the confirmation now lives inline on Prompt Session).
+Run the app on a physical device, sign for five seconds on any prompt, and read the Capture Review summary. Expected: `face` coverage near 1.0, `pose` coverage near 1.0, at least one hand above 0.5, and an achieved fps of 20 or better. A face stream that reports anything other than 468 points means iris refinement is on — disable it in the plugin config.
 
-- [ ] **Step 10: Extend `app/feedback.tsx` with the Likert scales**
+- [ ] **Step 5: Confirm no frame ever reaches disk**
 
-Keep the two verdict cards. Below them add three 1–5 scales — Naturalness, Grammaticality, Usefulness — each a row of five 48-point targets labelled at both ends. Submit calls `feedback.submit` then `feedback.rate`; the rating call is skipped if the participant leaves the scales untouched, so the directional vote is never blocked by them.
+```bash
+grep -rn "recordAsync\|writeAsStringAsync\|cacheDirectory\|documentDirectory" app lib
+```
 
-- [ ] **Step 11: Update `app/(tabs)/settings.tsx`**
+Expected: no matches. Then, with the app running on device, confirm the app's Documents and Caches directories contain no media file after a capture.
 
-Show the resolved `getApiBaseUrl()`, `Constants.expoConfig?.version`, the extractor id, the rule version, and consent status with a **Withdraw consent** action. Replace the privacy card copy with §3.2's four guarantees.
+- [ ] **Step 6: Commit**
 
-- [ ] **Step 12: Update the deployment configuration**
+```bash
+git add -A
+git commit -m "feat: native MediaPipe Tasks landmark extractor behind the extractor interface"
+```
 
-In `docker-compose.yml` and `docker-compose.hetzner.yml`, rename `OBJECT_STORAGE_BUCKET` defaults from `signbridge-recordings` to `signbridge-sequences`, and add:
+---
+
+## Task 11c: Deployment configuration and documentation
+
+**Files:**
+- Modify: `docker-compose.yml`, `docker-compose.hetzner.yml`, `DEVELOPMENT.md`
+
+**Interfaces:**
+- Consumes: `assertStorageConfig` and the bucket naming from Task 7; `CURRENT_CONSENT_VERSION` from Task 6; `SPLIT_RATIOS` from Task 10.
+- Produces: no code — the environment contract and the developer-facing docs.
+
+- [ ] **Step 1: Retarget the storage variables**
+
+In both `docker-compose.yml` and `docker-compose.hetzner.yml`, change the `OBJECT_STORAGE_BUCKET` default from `signbridge-recordings` to `signbridge-sequences`, and change the `minio-init` service's bucket default to match. Then add to the `backend` service environment in both files:
 
 ```yaml
       CALIBRATION_BUFFER_ENABLED: ${CALIBRATION_BUFFER_ENABLED:-false}
@@ -3508,31 +3684,48 @@ In `docker-compose.yml` and `docker-compose.hetzner.yml`, rename `OBJECT_STORAGE
       STUDY_SPLIT_SEED: ${STUDY_SPLIT_SEED:-signbridge-study-v1}
 ```
 
-In `DEVELOPMENT.md`, replace every "video recording" reference with "landmark sequence", document the three new variables, and add a section stating that the app now requires `expo prebuild` and a custom dev client rather than Expo Go.
+In `docker-compose.hetzner.yml` only, make the calibration flag explicit rather than defaulted, so enabling it in production is a deliberate act:
 
-- [ ] **Step 13: Run the full verification**
-
-```bash
-pnpm vitest run
-pnpm check
-pnpm lint
+```yaml
+      CALIBRATION_BUFFER_ENABLED: ${CALIBRATION_BUFFER_ENABLED:-false}
+      CALIBRATION_BUFFER_RETENTION_HOURS: ${CALIBRATION_BUFFER_RETENTION_HOURS:-24}
 ```
 
-Expected: all tests pass, no TypeScript errors, no lint errors.
-
-- [ ] **Step 14: Confirm no video path survives**
+- [ ] **Step 2: Verify the compose files still parse**
 
 ```bash
-grep -rn "recordAsync\|recordingUri\|video/mp4\|putSignerRecording" app lib server shared tests
+docker compose -f docker-compose.yml config >/dev/null && echo OK
+docker compose -f docker-compose.hetzner.yml config >/dev/null 2>&1 || echo "expected: fails on required vars"
 ```
 
-Expected: no matches outside a comment describing what the system does not do.
+Expected: the local file validates; the Hetzner overlay reports its `:?` required variables, which is correct behaviour.
 
-- [ ] **Step 15: Commit**
+- [ ] **Step 3: Update `DEVELOPMENT.md`**
+
+Replace every "video recording" reference with "landmark sequence"; the table row currently reading `**Video recording objects** | MinIO at http://localhost:9000 | Private Hetzner Object Storage bucket` becomes `**Landmark sequence objects**`. Then add three sections:
+
+1. **Build model** — the app requires `npx expo prebuild` and a custom development client. Expo Go is no longer supported, because MediaPipe runs as a native frame processor. Include the `pnpm android` / `pnpm ios` commands and note that a first build takes 10–20 minutes.
+2. **New environment variables** — a table for `CALIBRATION_BUFFER_ENABLED`, `CALIBRATION_BUFFER_RETENTION_HOURS`, `CONSENT_VERSION`, and `STUDY_SPLIT_SEED`, each with its default and what it controls.
+3. **Privacy posture** — a short section stating that the participant path never writes or transmits video, that object storage holds gzipped landmark JSON, and that the calibration buffer is the single flag-gated exception with its own retention rule. Link to `design.md` §3.
+
+- [ ] **Step 4: Reconcile `todo.md`**
+
+Tick every item this plan completed. Leave the `react-native-worklets-core` item open if Task 11b has not run.
+
+- [ ] **Step 5: Full verification**
+
+```bash
+pnpm vitest run && pnpm check && pnpm lint
+grep -rn "recordAsync\|recordingUri\|video/mp4\|putSignerRecording\|signbridge-recordings" app lib server shared tests docker-compose*.yml DEVELOPMENT.md
+```
+
+Expected: all green, and the grep returns no matches outside explicit "what we do not do" statements.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: native extractor, prompt-driven capture screens, live translate, Likert feedback, docs"
+git commit -m "docs: landmark-sequence deployment contract and prebuild developer guide"
 ```
 
 ---
@@ -3540,6 +3733,8 @@ git commit -m "feat: native extractor, prompt-driven capture screens, live trans
 ## Self-Review Notes
 
 **Spec coverage.** Every row of `design.md` §2 maps to a task: privacy pipeline → Tasks 2, 7, 11; NMM rules → Task 3; corpus → Task 4; schema → Task 5; consent → Task 6; sessions and prompts → Task 7; translation → Task 8; feedback and Likert → Task 9; splits and export → Task 10; screens, native build, and deployment → Task 11.
+
+**Execution waves.** Tasks 1–4 are pure logic (no database, no camera, no native build) and Tasks 2/3/4 depend only on Task 1, so they parallelise. Tasks 5–7 are persistence; Task 5 gates 6–10. Tasks 8/9/10 depend only on Task 5 and parallelise. Task 11a runs the whole participant journey on the fixture extractor, so it ships before the native blocker is resolved; 11b is the only task that requires a native toolchain; 11c is documentation and deployment config.
 
 **Corpus fidelity.** Task 4 transcribes all 100 Appendix A sentences. The single alteration is the missing leading "I" on `" need help with this form."`, corrected in the seed and noted in a comment beside it. The category-count validation is a regression guard, not a blocker.
 

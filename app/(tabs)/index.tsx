@@ -11,9 +11,15 @@ export default function WorkspaceScreen() {
   const activeStage = workflowQuery.data?.stage ?? ("capture" as WorkflowStage);
   const details = stageDetails[activeStage];
 
+  // The prompt-driven collection screens land in a later task. Until then the
+  // capture action is inert rather than pointing at a route that no longer exists.
+  const collectionReady = false;
+  const canOpenStage = activeStage === "translation" || collectionReady;
+
   const openActiveStage = () => {
+    if (!canOpenStage) return;
     if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push((activeStage === "capture" ? "/capture" : "/evaluation") as never);
+    router.push("/evaluation" as never);
   };
 
   return (
@@ -45,9 +51,19 @@ export default function WorkspaceScreen() {
           <Text style={styles.cardTitle}>{details.title}</Text>
           <Text style={styles.cardDescription}>{details.description}</Text>
 
-          <Pressable onPress={openActiveStage} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-            <Text style={styles.primaryButtonText}>{details.action}</Text>
-            <Text style={styles.buttonArrow}>›</Text>
+          <Pressable
+            disabled={!canOpenStage}
+            onPress={openActiveStage}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              !canOpenStage && styles.primaryButtonDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>
+              {canOpenStage ? details.action : "Collection opens shortly"}
+            </Text>
+            {canOpenStage ? <Text style={styles.buttonArrow}>›</Text> : null}
           </Pressable>
         </View>
 
@@ -91,6 +107,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: "#102A43", fontSize: 23, lineHeight: 29, fontWeight: "700" },
   cardDescription: { color: "#486581", fontSize: 16, lineHeight: 23 },
   primaryButton: { minHeight: 52, borderRadius: 15, backgroundColor: "#0F766E", marginTop: 6, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  primaryButtonDisabled: { opacity: 0.55 },
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.92 },
   primaryButtonText: { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
   buttonArrow: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 28 },

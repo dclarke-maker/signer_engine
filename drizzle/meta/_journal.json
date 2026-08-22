@@ -15,6 +15,20 @@
       "when": 1787318412385,
       "tag": "0001_nosy_patch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787391961118,
+      "tag": "0002_mute_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787391994010,
+      "tag": "0003_new_onslaught",
+      "breakpoints": true
     }
   ]
 }
