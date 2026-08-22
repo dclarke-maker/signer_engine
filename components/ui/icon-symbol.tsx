@@ -5,13 +5,21 @@ import { SymbolWeight, SymbolViewProps } from "expo-symbols";
 import { ComponentProps } from "react";
 import { OpaqueColorValue, type StyleProp, type TextStyle } from "react-native";
 
-type IconMapping = Record<SymbolViewProps["name"], ComponentProps<typeof MaterialIcons>["name"]>;
+type IconMapping = Partial<
+  Record<SymbolViewProps["name"], ComponentProps<typeof MaterialIcons>["name"]>
+>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
  * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
  * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ *
+ * Declared with `satisfies`, not `as`. Casting widened the key type to every SF
+ * Symbol name, so an icon missing from this table still type-checked and then
+ * rendered blank on Android and web - which is how `chart.bar.fill` shipped
+ * unmapped. `satisfies` validates the values while keeping the keys literal, so
+ * an unmapped name is now a compile error at the call site.
  */
 const MAPPING = {
   "house.fill": "home",
@@ -25,7 +33,7 @@ const MAPPING = {
   "hand.raised.fill": "front-hand",
   "text.bubble.fill": "chat",
   "chart.bar.fill": "bar-chart",
-} as IconMapping;
+} satisfies IconMapping;
 
 /**
  * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.

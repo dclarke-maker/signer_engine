@@ -20,8 +20,8 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 
 ## Known issues found during implementation
 
-- [ ] `internalAdmin.inviteSigner` creates the invitation row before sending the email. When SMTP fails the invitation exists but the administrator never learns the token, leaving an unusable orphaned invitation with no resend path.
-- [ ] `components/ui/icon-symbol.tsx` casts its mapping `as IconMapping`, so `keyof typeof MAPPING` resolves to every SF Symbol name. A missing icon type-checks cleanly and renders blank on Android and web.
+- [x] `internalAdmin.inviteSigner` left an orphaned invitation when SMTP failed. It now withdraws the invitation and reports that nothing is outstanding.
+- [x] `components/ui/icon-symbol.tsx` used `as IconMapping`, which widened the key type so a missing icon type-checked and rendered blank. Now `satisfies`, so an unmapped name is a compile error.
 
 ## Complete
 

@@ -39,13 +39,31 @@ export async function createSignerInvitation(input: { email: string; displayName
     .where(and(eq(signerInvitations.signerId, signer.id), isNull(signerInvitations.acceptedAt)));
 
   const token = generateOpaqueToken();
-  await db.insert(signerInvitations).values({
-    signerId: signer.id,
-    tokenHash: hashOpaqueToken(token),
-    expiresAt: new Date(Date.now() + signerInvitationLifetimeMs),
-  });
+  const expiresAt = new Date(Date.now() + signerInvitationLifetimeMs);
+  const tokenHash = hashOpaqueToken(token);
+  await db.insert(signerInvitations).values({ signerId: signer.id, tokenHash, expiresAt });
 
-  return { signer: publicSigner(signer), token, expiresAt: new Date(Date.now() + signerInvitationLifetimeMs) };
+  // The caller needs this to undo the invitation if delivery fails: the raw
+  // token is shown once and never stored, so an invitation whose email never
+  // arrived can never be used or resent.
+  const created = (
+    await db.select().from(signerInvitations).where(eq(signerInvitations.tokenHash, tokenHash)).limit(1)
+  )[0];
+
+  return { signer: publicSigner(signer), token, expiresAt, invitationId: created.id };
+}
+
+/**
+ * Removes an invitation that was created but never delivered.
+ *
+ * Creating an invitation invalidates any previous pending one, so a failed send
+ * that left its row behind would block nothing but confuse everything: the
+ * administrator cannot resend it, cannot see why, and each retry orphans
+ * another. Unknown ids are a no-op so cleanup is always safe to attempt.
+ */
+export async function revokeSignerInvitation(invitationId: number) {
+  const db = await requireDb();
+  await db.delete(signerInvitations).where(eq(signerInvitations.id, invitationId));
 }
 
 export async function acceptSignerInvitation(input: { token: string; password: string }) {

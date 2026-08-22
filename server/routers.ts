@@ -7,6 +7,7 @@ import { sendSignerInvitation } from "./invitation-mail";
 import {
   acceptSignerInvitation,
   createSignerInvitation,
+  revokeSignerInvitation,
   deleteSignerSession,
   getSignerFromSessionToken,
   signInSigner,
@@ -99,12 +100,26 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: "Internal administrator authorization is required." });
         }
         const invitation = await createSignerInvitation(input);
-        await sendSignerInvitation({
-          email: invitation.signer.email,
-          displayName: invitation.signer.displayName,
-          token: invitation.token,
-          expiresAt: invitation.expiresAt,
-        });
+        try {
+          await sendSignerInvitation({
+            email: invitation.signer.email,
+            displayName: invitation.signer.displayName,
+            token: invitation.token,
+            expiresAt: invitation.expiresAt,
+          });
+        } catch (error) {
+          // The token is shown once and never stored, so an invitation whose
+          // email never arrived is unusable and unresendable. Remove it rather
+          // than leaving an orphan that also invalidated the previous one.
+          await revokeSignerInvitation(invitation.invitationId).catch(() => undefined);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message:
+              "The invitation could not be delivered and has been withdrawn. " +
+              "No invitation is outstanding for this address; check the mail configuration and try again. " +
+              (error instanceof Error ? error.message : ""),
+          });
+        }
         return { signer: invitation.signer, expiresAt: invitation.expiresAt, status: "sent" as const };
       }),
   }),
