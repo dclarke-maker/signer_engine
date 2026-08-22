@@ -93,7 +93,33 @@ pnpm ios                 # or: pnpm android
 
 The first native build takes 10-20 minutes and needs Xcode (iOS) or the Android SDK. Once the development client is installed, `pnpm dev` drives it as usual.
 
-Until the native extractor lands, `getExtractor()` in `lib/extractors/index.ts` returns a deterministic fixture extractor. Every screen depends on that interface rather than on a concrete extractor, so swapping in MediaPipe changes one function and no screens.
+### The MediaPipe holistic plugin
+
+Landmark extraction is a custom Vision Camera frame-processor plugin wrapping MediaPipe Tasks. No off-the-shelf React Native package supplies hand landmarks, so this is written rather than integrated.
+
+| Piece | Where |
+| --- | --- |
+| Swift plugin + ObjC registration | `native/holistic/ios/` |
+| Kotlin plugin + package registration | `native/holistic/android/` |
+| Wire format (the authority, unit-tested) | `lib/extractors/holistic-buffer.ts` |
+| Expo config plugin | `plugins/with-mediapipe-holistic.js` |
+| JS extractor | `lib/extractors/mediapipe-native-extractor.ts` |
+
+The plugin returns one packed `Float32Array` per frame rather than a nested map: a holistic result is ~543 landmarks, and bridging that as objects at 30fps would dominate the frame budget. `holistic-buffer.ts` defines the layout, decodes it, and its `encodeHolisticBuffer` is an executable specification the Swift and Kotlin writers must match.
+
+Fetch the model before prebuilding — it is not committed:
+
+```bash
+./scripts/fetch-holistic-model.sh
+npx expo prebuild --clean
+pnpm ios      # or: pnpm android
+```
+
+The config plugin fails the build with a clear message if the model is absent, rather than producing an app that silently detects nothing.
+
+**Still to wire.** The native extractor exposes `processFrame(frame, nowMs)`, which must be driven by a Vision Camera `useFrameProcessor`. The capture and live-translate screens currently render `expo-camera`'s `CameraView`, which has no frame-processor hook, so on a device the native extractor is selected but never fed. Completing this means rendering Vision Camera's `<Camera>` on native in `app/capture.tsx` and `app/live-translate.tsx`. It was left undone deliberately: it cannot be verified without a device build, and doing it blind would replace two working screens with unverifiable ones.
+
+Until then `getExtractor()` falls back to the deterministic fixture, which is also what Expo Go and web use. Every screen depends on the `LandmarkExtractor` interface rather than a concrete extractor, so the runtime can change without touching them.
 
 ## Production: Gmail SMTP
 

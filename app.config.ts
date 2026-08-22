@@ -64,7 +64,17 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS", "CAMERA", "RECORD_AUDIO"],
+    // No RECORD_AUDIO and no storage permissions: the pipeline has no audio
+    // channel and writes nothing to disk. Requesting either would contradict
+    // the zero-retention guarantee the consent screen makes to participants.
+    permissions: ["POST_NOTIFICATIONS", "CAMERA"],
+    // expo-camera injects storage permissions so an app can save photos. This
+    // one never writes a file, so they are blocked rather than shipped unused.
+    blockedPermissions: [
+      "android.permission.RECORD_AUDIO",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+    ],
     intentFilters: [
       {
         action: "VIEW",
@@ -89,24 +99,22 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow $(PRODUCT_NAME) to record signing samples.",
-        microphonePermission: "Allow $(PRODUCT_NAME) to record audio with signing samples.",
-        recordAudioAndroid: true,
+        // The pipeline reads motion points and never records. Requesting a
+        // microphone permission the app never uses would undercut that claim.
+        cameraPermission:
+          "Allow $(PRODUCT_NAME) to read motion points while you sign. No video is recorded or saved.",
+        recordAudioAndroid: false,
       },
     ],
     [
-      "expo-audio",
+      "react-native-vision-camera",
       {
-        microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
+        cameraPermissionText:
+          "Allow $(PRODUCT_NAME) to read motion points while you sign. No video is recorded or saved.",
+        enableMicrophonePermission: false,
       },
     ],
-    [
-      "expo-video",
-      {
-        supportsBackgroundPlayback: true,
-        supportsPictureInPicture: true,
-      },
-    ],
+    "./plugins/with-mediapipe-holistic",
     [
       "expo-splash-screen",
       {

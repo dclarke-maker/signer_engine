@@ -3,29 +3,19 @@
 Reconciled against `design.md` and *Research Methodology — Assignment 2 (Proposal)* on 2026-08-22.
 Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md`
 
-## Blocking — needs a decision
+## Blocking
 
-**No React Native package provides MediaPipe hand landmarks.** Checked against the registry:
-
-| Package | Provides | Hands? |
-| --- | --- | --- |
-| `@mediapipe/tasks-vision@1.0.1` (Google) | `HolisticLandmarker` — face, pose, both hands, one model | Yes, but **JS/WASM only** |
-| `react-native-mediapipe@0.6.0` | pose, face, object detection | **No** |
-| `@thinksys/react-native-mediapipe` | pose skeleton, untyped callback | **No** |
-
-Hands are the primary manual channel for sign language, so a package without them cannot implement this pipeline. Three paths:
-
-- [ ] **A — Custom native plugin.** Write a Swift/Kotlin frame processor wrapping MediaPipe Tasks. Full control and native frame rates; several days of native work, plus Xcode / Android SDK.
-- [ ] **B — WASM holistic in a WebView.** `lib/extractors/holistic-web-extractor.ts` is written and type-verified against the official package; it needs a `<video>` element and live browser verification. Works today on web; frame rate on device is the open risk.
-- [ ] **C — Measure first.** Verify B's frame rate on a target device, then decide whether A is necessary or merely preferable.
-
-Earlier notes about a `react-native-worklets-core` conflict are moot: that peer belongs to `react-native-vision-camera@4`, and no vision-camera version supplies hand landmarks anyway.
+- [ ] **A device build.** `expo prebuild` and a native build need Xcode and/or the Android SDK. This host has neither, nor Node itself — all work so far has run in a container. Nothing below can be verified until this exists.
 
 ## Remaining work
 
-- [ ] Decide between paths A, B, and C above, then wire the chosen extractor into `lib/extractors/index.ts`. No screen changes required either way.
-- [ ] Give the web extractor a `<video>` source. `expo-camera`'s `CameraView` renders one internally on web but does not expose a ref, so this needs either a web-specific capture path or a plain `getUserMedia` video element.
-- [ ] Verify holistic extraction live: face 468, pose 33, 21 per hand, and the achieved frame rate on a target device.
+- [ ] **Feed the native extractor.** `createMediaPipeNativeExtractor` exposes `processFrame(frame, nowMs)`, which a Vision Camera `useFrameProcessor` must call. `app/capture.tsx` and `app/live-translate.tsx` still render `expo-camera`'s `CameraView`, which has no frame-processor hook, so on device the extractor is selected but never receives frames. Render Vision Camera's `<Camera>` on native in both screens.
+- [ ] **Build and run the plugin.** The Swift and Kotlin sources are written against the real MediaPipe Tasks and Vision Camera APIs but have never been compiled. Expect signature fixes on first build.
+- [ ] **Verify against the wire format.** `encodeHolisticBuffer` in `lib/extractors/holistic-buffer.ts` is the executable spec; confirm the native writers produce a buffer the decoder accepts, then check face 468, pose 33, 21 per hand, and the achieved frame rate.
+- [ ] Give the web extractor a `<video>` source. `expo-camera`'s `CameraView` renders one internally on web but does not expose a ref, so this needs a web-specific capture path or a plain `getUserMedia` element.
+
+## Elsewhere
+
 - [ ] Implement the workshop calibration buffer itself. The environment contract, consent scope, and retention ceiling exist; the encrypted transient store and scheduled purge do not.
 - [ ] Wire the export services to a command or endpoint. `buildTrainingJsonl`, `buildElanTiers`, and `exportManifest` are implemented and tested but nothing calls them yet.
 - [ ] Retire or quarantine unrelated Manus template scaffolding: `server/_core/{llm,imageGeneration,voiceTranscription,oauth}.ts`, `server/storage.ts`, the `users` table, `app/oauth/callback.tsx`.
