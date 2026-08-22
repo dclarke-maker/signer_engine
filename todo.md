@@ -17,7 +17,7 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 ## Elsewhere
 
 - [ ] Implement the workshop calibration buffer itself. The environment contract, consent scope, and retention ceiling exist; the encrypted transient store and scheduled purge do not.
-- [ ] Retire or quarantine unrelated Manus template scaffolding: `server/_core/{llm,imageGeneration,voiceTranscription,oauth}.ts`, `server/storage.ts`, the `users` table, `app/oauth/callback.tsx`.
+- [ ] Retire the remaining Manus OAuth scaffolding: `server/_core/{oauth,sdk,notification,storageProxy}.ts`, the `users` table, and `app/oauth/callback.tsx`. Unlike the files already removed, these are still wired in — `sdk.authenticateRequest` runs in `createContext` and `oauth`/`storageProxy` register routes — so removing them means changing the auth path, which participant sign-in does not use but the template's `auth.me` does.
 
 ## Known issues found during implementation
 
