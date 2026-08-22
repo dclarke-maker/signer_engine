@@ -1,0 +1,98 @@
+# SignBridge Development and Deployment Guide
+
+## Purpose
+
+SignBridge has an Expo mobile client and a Node.js backend. The mobile application captures a signer clip only after that signer has activated an approved account and signed in. Docker Compose provides the complete low-cost development stack: the backend, MariaDB for signer data, MinIO for recording-object simulation, and Mailpit for invitation-email inspection. Production uses a Hetzner server, a colocated MariaDB container, Hetzner Object Storage for private recordings, and Gmail SMTP for invitations.
+
+> This release establishes the account, invitation, session, and capture-ownership boundaries. The native client records a clip and the API records the authenticated capture metadata. Secure direct or multipart transport of the video bytes to object storage is the next storage hardening step.
+
+## Architecture
+
+| Concern                             | Local development                                      | Production                                                                             |
+| ----------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **Signer identity**                 | MariaDB signer-account, invitation, and session tables | MariaDB on the Hetzner server with a persistent volume                                 |
+| **Invitation delivery**             | Mailpit inbox at `http://localhost:8025`               | Gmail SMTP using a dedicated sender account and protected server environment variables |
+| **Video recording objects**         | MinIO at `http://localhost:9000`                       | Private Hetzner Object Storage bucket                                                  |
+| **Administrator invitation access** | Header-protected internal endpoint                     | Replace with the external administrator API guard when its contract is supplied        |
+
+The `signer_accounts` table records only approved email addresses and password hashes. Invitation and session tokens are stored only as SHA-256 hashes. The corresponding raw tokens are returned to the signer once, through the invitation path, and are not stored as plaintext.
+
+## Run the local stack
+
+From the repository root, start the services:
+
+```bash
+docker compose up --build
+```
+
+The local services are available at the following addresses.
+
+| Service       | Address                 | Purpose                                                                   |
+| ------------- | ----------------------- | ------------------------------------------------------------------------- |
+| Backend API   | `http://localhost:3000` | Stage configuration, signer sessions, captures, feedback, and invitations |
+| Mailpit       | `http://localhost:8025` | View local invitation emails without sending messages externally          |
+| MinIO API     | `http://localhost:9000` | Object-storage emulator                                                   |
+| MinIO console | `http://localhost:9001` | Inspect the local recording bucket                                        |
+
+Compose waits for MariaDB, runs the reviewed Drizzle migrations, and creates the local MinIO recording bucket before starting the backend. The development defaults are only for a local workstation. Replace the default database, MinIO, and internal-admin values before sharing the environment with anyone else.
+
+## Signer invitation and sign-in lifecycle
+
+1. An administrator registers an approved signer email using the internal invitation boundary.
+2. The backend creates a one-time invitation token with a 72-hour expiration and sends the setup link through Mailpit locally or Gmail SMTP in production.
+3. The signer follows the link, sets a password of at least 12 characters, and receives a seven-day session token.
+4. The mobile app stores the session token in encrypted native secure storage and verifies the session with the API before opening the camera.
+5. Each accepted capture metadata record is associated with the authenticated signer identifier.
+
+The temporary internal administrator endpoint requires `x-internal-admin-key`. It is deliberately not called by the mobile app. When the secured administrator API details are available, that header check should be replaced by the provider-issued administrator authentication rule before any production administrator interface is exposed.
+
+## Production: Hetzner Object Storage
+
+Set the following values in the Hetzner server's protected environment before starting the production overlay.
+
+| Variable                    | Example format                        | Purpose                                           |
+| --------------------------- | ------------------------------------- | ------------------------------------------------- |
+| `OBJECT_STORAGE_ENDPOINT`   | `https://fsn1.your-objectstorage.com` | Location-specific Hetzner Object Storage endpoint |
+| `OBJECT_STORAGE_BUCKET`     | `signbridge-recordings-prod`          | Private signer-recording bucket                   |
+| `OBJECT_STORAGE_REGION`     | `fsn1`                                | Bucket location                                   |
+| `OBJECT_STORAGE_ACCESS_KEY` | Provider-issued key                   | Server-only bucket access credential              |
+| `OBJECT_STORAGE_SECRET_KEY` | Provider-issued secret                | Server-only bucket access credential              |
+| `MYSQL_PASSWORD`            | Long random secret                    | MariaDB application account password              |
+| `MYSQL_ROOT_PASSWORD`       | Long random secret                    | MariaDB root password                             |
+| `INTERNAL_ADMIN_KEY`        | Long random secret                    | Temporary internal invitation-management guard    |
+
+Hetzner Object Storage uses a compatible object-storage API with location-specific endpoints. Keep the bucket private, create credentials in the Hetzner Console, and retain the issued secret immediately because it is not shown again. [1] [2]
+
+## Production: Gmail SMTP
+
+The production Compose overlay configures the invitation adapter for Gmail SMTP. Supply the following values only in the server environment, never in the Expo app or committed repository files.
+
+| Variable                 | Example format                         | Purpose                                                    |
+| ------------------------ | -------------------------------------- | ---------------------------------------------------------- |
+| `SMTP_USER`              | `signbridge@example.com`               | Dedicated Gmail or Google Workspace sender address         |
+| `SMTP_PASSWORD`          | App-specific password                  | Credential used solely by the backend SMTP client          |
+| `SMTP_FROM`              | `SignBridge <signbridge@example.com>`  | Visible invitation sender                                  |
+| `SIGNER_INVITE_BASE_URL` | `https://api.example.com/set-password` | Public password-setup URL that receives the one-time token |
+
+Google documents `smtp.gmail.com` with SSL on port `465` or TLS on port `587`; the scaffold uses the SSL option. App passwords require two-step verification and may not be available under all organisation policies. Google Workspace recommends its SMTP relay option for managed organisation deployments, so use that option if your administrator provides it. [3] [4]
+
+## Start the Hetzner production overlay
+
+Place the production-only environment variables in the protected Hetzner server configuration, provision a TLS-terminating reverse proxy, and then run:
+
+```bash
+docker compose -f docker-compose.hetzner.yml up -d --build
+curl http://127.0.0.1:3000/api/health
+```
+
+The overlay binds the backend to loopback, leaving the reverse proxy responsible for TLS, public routing, request limits, and access logs. Keep the MariaDB volume on the Hetzner server and document a database-backup schedule before enrolling signers.
+
+## References
+
+[1] [Hetzner, “Object Storage overview.”](https://docs.hetzner.com/storage/object-storage/overview/)
+
+[2] [Hetzner, “Using S3 compatible CLI tools.”](https://docs.hetzner.com/storage/object-storage/getting-started/using-s3-api-tools/)
+
+[3] [Google Workspace, “Send email from a printer, scanner, or app.”](https://knowledge.workspace.google.com/admin/gmail/send-email-from-a-printer-scanner-or-app)
+
+[4] [Google Gmail Help, “Sign in with app passwords.”](https://support.google.com/mail/answer/185833?hl=en)

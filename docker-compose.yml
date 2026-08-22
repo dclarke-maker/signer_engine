@@ -1,0 +1,114 @@
+name: signbridge
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3000
+      WORKFLOW_STAGE: ${WORKFLOW_STAGE:-capture}
+      WORKFLOW_CONFIG_VERSION: ${WORKFLOW_CONFIG_VERSION:-local-v1}
+      OBJECT_STORAGE_MODE: minio
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-signbridge-recordings}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-signbridge-local}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-signbridge-local-secret}
+      DATABASE_URL: mysql://signbridge:${MYSQL_PASSWORD:-signbridge-local-password}@mariadb:3306/signbridge
+      SMTP_PROVIDER: mailpit
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: ${SMTP_FROM:-SignBridge <no-reply@localhost>}
+      SIGNER_INVITE_BASE_URL: ${SIGNER_INVITE_BASE_URL:-signbridge://set-password}
+      INTERNAL_ADMIN_KEY: ${INTERNAL_ADMIN_KEY:-signbridge-local-admin-key}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    environment:
+      DATABASE_URL: mysql://signbridge:${MYSQL_PASSWORD:-signbridge-local-password}@mariadb:3306/signbridge
+    command: ["pnpm", "drizzle-kit", "migrate"]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: "no"
+
+  mariadb:
+    image: mariadb:11
+    environment:
+      MYSQL_DATABASE: signbridge
+      MYSQL_USER: signbridge
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-signbridge-local-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-signbridge-local-root-password}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mariadb-admin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-signbridge-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-signbridge-local-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-signbridge-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-signbridge-local-secret}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-signbridge-recordings}
+    entrypoint: >
+      /bin/sh -c "until mc alias set signbridge http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do sleep 2; done; mc mb --ignore-existing signbridge/$$OBJECT_STORAGE_BUCKET"
+    restart: "no"
+
+volumes:
+  minio-data:
+  mariadb-data:

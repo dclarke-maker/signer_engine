@@ -1,0 +1,11 @@
+node_modules
+.expo
+.git
+.manus-logs
+dist
+coverage
+*.log
+.env
+.env.*
+!.env.example
+README.md

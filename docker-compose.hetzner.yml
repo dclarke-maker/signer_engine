@@ -1,0 +1,79 @@
+services:
+  backend:
+    image: ${SIGNBRIDGE_IMAGE:-signbridge-backend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3000
+      WORKFLOW_STAGE: ${WORKFLOW_STAGE:-capture}
+      WORKFLOW_CONFIG_VERSION: ${WORKFLOW_CONFIG_VERSION:-production-v1}
+      OBJECT_STORAGE_MODE: hetzner
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:?Set the Hetzner Object Storage endpoint}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?Set a private recording bucket name}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-fsn1}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?Set the Hetzner Object Storage access key}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?Set the Hetzner Object Storage secret key}
+      DATABASE_URL: mysql://signbridge:${MYSQL_PASSWORD:?Set the MariaDB signer password}@mariadb:3306/signbridge
+      SMTP_PROVIDER: gmail
+      SMTP_USER: ${SMTP_USER:?Set the Gmail or Workspace sender address}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?Set the Gmail app password or approved SMTP credential}
+      SMTP_FROM: ${SMTP_FROM:?Set the invitation sender address}
+      SIGNER_INVITE_BASE_URL: ${SIGNER_INVITE_BASE_URL:?Set the public password-setup URL}
+      INTERNAL_ADMIN_KEY: ${INTERNAL_ADMIN_KEY:?Set the internal administrator API key}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    image: ${SIGNBRIDGE_IMAGE:-signbridge-backend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    environment:
+      DATABASE_URL: mysql://signbridge:${MYSQL_PASSWORD:?Set the MariaDB signer password}@mariadb:3306/signbridge
+    command: ["pnpm", "drizzle-kit", "migrate"]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: "no"
+
+  mariadb:
+    image: mariadb:11
+    environment:
+      MYSQL_DATABASE: signbridge
+      MYSQL_USER: signbridge
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set the MariaDB signer password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set the MariaDB root password}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mariadb-admin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  mariadb-data:
