@@ -271,7 +271,9 @@ The corpus is **seed data with a validation rule**, not hard-coded strings: the 
 
 `nepaliSource` records provenance per prompt: `machine-draft` or `ndfn-validated`. Every rendering is currently a draft, drafted in-project and **not yet reviewed by a native speaker**. The prompt screen shows a standing notice while any prompt is unvalidated, and `isCorpusTranslationValidated()` is the check that must pass before real collection begins.
 
-Note that written Nepali is not NSL. Prompting with text asks the signer to render Nepali into NSL, which is itself a translation step — the proposal's design ("each recorded video corresponds to a predefined text prompt") accepts this, but it is a source of variation the NDFN workshop should examine.
+**Why text, deliberately.** Written Nepali is not NSL, so a text prompt asks the signer to render Nepali into NSL. That is intended. Participants are trained, qualified signers, and the differences between how several of them render the same sentence are the training signal — they are what lets a model generalise to a signer it has never seen, and they are what §12.3's signer-independent split exists to measure.
+
+A signed-video prompt would remove the reading step but invite mimicry, collapsing that variation toward whichever signer recorded the stimulus. Prompting with pictures would loosen the tie between a sample and its English reference, which BLEU and ROUGE depend on. Text keeps the reference exact while leaving production free, which is the combination this study needs.
 
 > **Transcription note.** Appendix A prints one Category E entry as `" need help with this form."`, missing its leading "I". The seed records it as *"I need help with this form."* and the correction is noted inline in the seed file. No other sentence is altered.
 

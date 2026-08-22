@@ -16,7 +16,7 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 ## Corpus translation
 
 - [ ] **Have a native Nepali speaker review all 100 renderings**, ideally through NDFN. They are drafted in-project and marked `machine-draft`; collection must not begin on drafts, because the signer reads the Nepali while the model is scored against the English. Flip `nepaliSource` to `ndfn-validated` per prompt as they are checked.
-- [ ] Decide whether written-Nepali prompting is right at all. It asks the signer to render Nepali into NSL, which is a translation step in itself. A signed-video prompt would remove it, at the cost of needing an NSL signer to record 100 stimulus clips first.
+- [x] ~~Decide whether written-Nepali prompting is right.~~ **Settled: text prompts stay.** Participants are trained, qualified signers, so literacy is not the limiting factor it would be with a general Deaf sample. More importantly, the variation between signers rendering the same sentence is the training signal, not noise — it is what lets the model generalise to an unseen signer, and it is what the signer-independent split measures. A signed-video prompt would invite mimicry and suppress exactly that variation.
 
 ## Elsewhere
 
