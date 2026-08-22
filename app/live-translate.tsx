@@ -1,4 +1,4 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 
+import { LandmarkCamera } from "@/components/landmark-camera";
 import { ScreenContainer } from "@/components/screen-container";
 import { TARGET_FPS, getExtractor } from "@/lib/extractors";
 import { formatElapsed } from "@/lib/format-elapsed";
@@ -185,7 +186,7 @@ export default function LiveTranslateScreen() {
 
   return (
     <View style={styles.fullScreen}>
-      <CameraView style={StyleSheet.absoluteFill} facing="front" />
+      <LandmarkCamera extractor={extractorRef.current} active={phase === "signing"} />
       <ScreenContainer
         edges={["top", "bottom", "left", "right"]}
         containerClassName="bg-transparent"

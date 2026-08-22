@@ -22,7 +22,9 @@ export const TARGET_FPS = 30;
 export function getExtractor(): LandmarkExtractor {
   if (Platform.OS === "web") return createFixtureExtractor(demoSequence);
   if (!hasFrameProcessors()) return createFixtureExtractor(demoSequence);
-  return createMediaPipeNativeExtractor({ mirrored: true, minIntervalMs: 1000 / TARGET_FPS });
+  // Throttling now happens on the camera thread in LandmarkCamera, where
+  // frames can be dropped before they cross to JS.
+  return createMediaPipeNativeExtractor({ mirrored: true });
 }
 
 /**

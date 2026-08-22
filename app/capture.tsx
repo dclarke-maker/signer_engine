@@ -1,9 +1,10 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { LandmarkCamera } from "@/components/landmark-camera";
 import { ScreenContainer } from "@/components/screen-container";
 import { setCaptureBuffer } from "@/lib/capture-buffer";
 import { TARGET_FPS, getExtractor } from "@/lib/extractors";
@@ -109,7 +110,7 @@ export default function CaptureScreen() {
 
   return (
     <View style={styles.fullScreen}>
-      <CameraView style={StyleSheet.absoluteFill} facing="front" />
+      <LandmarkCamera extractor={extractorRef.current} active={isCapturing} />
       <ScreenContainer
         edges={["top", "bottom", "left", "right"]}
         containerClassName="bg-transparent"

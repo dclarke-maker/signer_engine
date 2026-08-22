@@ -9,7 +9,6 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 
 ## Remaining work
 
-- [ ] **Feed the native extractor.** `createMediaPipeNativeExtractor` exposes `processFrame(frame, nowMs)`, which a Vision Camera `useFrameProcessor` must call. `app/capture.tsx` and `app/live-translate.tsx` still render `expo-camera`'s `CameraView`, which has no frame-processor hook, so on device the extractor is selected but never receives frames. Render Vision Camera's `<Camera>` on native in both screens.
 - [ ] **Build and run the plugin.** The Swift and Kotlin sources are written against the real MediaPipe Tasks and Vision Camera APIs but have never been compiled. Expect signature fixes on first build.
 - [ ] **Verify against the wire format.** `encodeHolisticBuffer` in `lib/extractors/holistic-buffer.ts` is the executable spec; confirm the native writers produce a buffer the decoder accepts, then check face 468, pose 33, 21 per hand, and the achieved frame rate.
 - [ ] Give the web extractor a `<video>` source. `expo-camera`'s `CameraView` renders one internally on web but does not expose a ref, so this needs a web-specific capture path or a plain `getUserMedia` element.

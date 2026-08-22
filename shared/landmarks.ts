@@ -43,4 +43,15 @@ export interface LandmarkExtractor {
   start(options: { targetFps: number }): Promise<void>;
   subscribe(onFrame: (frame: LandmarkFrame) => void): () => void;
   stop(): Promise<LandmarkSequenceSummary>;
+
+  /**
+   * Present only on extractors that cannot pull frames themselves.
+   *
+   * The fixture and web extractors drive their own loop, so a screen only has
+   * to subscribe. A native extractor is fed by a camera frame processor, which
+   * hands it packed landmark buffers; a camera that never calls this leaves it
+   * silently producing nothing. `needsPushedFrames` in lib/extractors/shape.ts
+   * is how a camera decides which contract it has.
+   */
+  acceptBuffer?(buffer: ArrayBuffer): void;
 }

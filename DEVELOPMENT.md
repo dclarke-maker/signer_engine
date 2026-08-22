@@ -131,9 +131,11 @@ pnpm ios      # or: pnpm android
 
 The config plugin fails the build with a clear message if the model is absent, rather than producing an app that silently detects nothing.
 
-**Still to wire.** The native extractor exposes `processFrame(frame, nowMs)`, which must be driven by a Vision Camera `useFrameProcessor`. The capture and live-translate screens currently render `expo-camera`'s `CameraView`, which has no frame-processor hook, so on a device the native extractor is selected but never fed. Completing this means rendering Vision Camera's `<Camera>` on native in `app/capture.tsx` and `app/live-translate.tsx`. It was left undone deliberately: it cannot be verified without a device build, and doing it blind would replace two working screens with unverifiable ones.
+**The thread boundary.** A frame processor runs in a worklet runtime that receives *copies* of captured values, so state mutated there never reaches the JS thread. `components/landmark-camera.tsx` therefore does only what must happen on the camera thread - throttling with `runAtTargetFps` and calling the plugin - then marshals the packed buffer across with `Worklets.createRunOnJS`. Decoding, counting, and listener notification all happen on JS, where the extractor's state lives.
 
-Until then `getExtractor()` falls back to the deterministic fixture, which is also what Expo Go and web use. Every screen depends on the `LandmarkExtractor` interface rather than a concrete extractor, so the runtime can change without touching them.
+Screens render `<LandmarkCamera>` rather than a camera directly. It inspects the extractor: pull extractors (fixture, web) get a plain preview, push extractors get Vision Camera with the frame processor attached. If a push extractor is paired with an unavailable device or plugin - Expo Go, or a build without the config plugin - it falls back to a preview and warns in development, because that combination would otherwise produce a capture of zero frames with no error at all.
+
+Every screen depends on the `LandmarkExtractor` interface rather than a concrete extractor, so the runtime can change without touching them.
 
 ## Production: Gmail SMTP
 
