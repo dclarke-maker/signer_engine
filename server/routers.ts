@@ -1,6 +1,7 @@
 import { COOKIE_NAME } from "../shared/const.js";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { feedbackVoteValues } from "../shared/workflow";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { sendSignerInvitation } from "./invitation-mail";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./signer-service";
 import { extractBearerToken } from "./signer-security";
 import { createTranslationJob, getLatestTranslationJob } from "./translation-service";
+import { recordFeedbackVote, recordQualitativeRating } from "./feedback-service";
 import {
   getCaptureSession,
   getNextPromptForSigner,
@@ -242,17 +244,42 @@ export const appRouter = router({
     submit: publicProcedure
       .input(
         z.object({
-          evaluationId: z.string().min(1).max(128),
-          vote: z.enum(["accurate", "needs_correction"]),
+          translationJobId: z.string().min(1).max(64),
+          vote: z.enum(feedbackVoteValues),
           note: z.string().trim().max(280).optional(),
-          createdAt: z.string().datetime(),
         }),
       )
-      .mutation(({ input }) => ({
-        id: crypto.randomUUID(),
-        status: "accepted" as const,
-        ...input,
-      })),
+      .mutation(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        try {
+          return await recordFeedbackVote({ ...input, signerId: signer?.id ?? null });
+        } catch (error) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: error instanceof Error ? error.message : "Feedback could not be recorded.",
+          });
+        }
+      }),
+    rate: publicProcedure
+      .input(
+        z.object({
+          translationJobId: z.string().min(1).max(64),
+          naturalness: z.number().int().min(1).max(5),
+          grammaticality: z.number().int().min(1).max(5),
+          usefulness: z.number().int().min(1).max(5),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        try {
+          return await recordQualitativeRating({ ...input, signerId: signer?.id ?? null });
+        } catch (error) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: error instanceof Error ? error.message : "Ratings could not be recorded.",
+          });
+        }
+      }),
   }),
 });
 
