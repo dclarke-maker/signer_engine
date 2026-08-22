@@ -3,47 +3,10 @@ import { describe, expect, it } from "vitest";
 import { computeSignerBaseline } from "../server/nmm/baseline";
 import { confidenceFor, detectNmms, nmmRules } from "../server/nmm/rules";
 import { BASELINE_RULE_VERSION } from "../server/nmm/thresholds";
-import { makeSequence } from "./fixtures/landmark-frames";
+import { makePoseFrame, makeSequence } from "./fixtures/landmark-frames";
 import type { LandmarkFrame } from "../shared/landmarks";
 
-/** Places the landmarks each rule reads at explicit, physical coordinates. */
-function poseFrame(
-  t: number,
-  o: {
-    shoulderL?: [number, number, number];
-    shoulderR?: [number, number, number];
-    hipL?: [number, number, number];
-    hipR?: [number, number, number];
-    nose?: [number, number, number];
-    earL?: [number, number, number];
-    earR?: [number, number, number];
-    browL?: [number, number, number];
-    browR?: [number, number, number];
-    eyeL?: [number, number, number];
-    eyeR?: [number, number, number];
-  } = {},
-): LandmarkFrame {
-  const [frame] = makeSequence({ frameCount: 1 });
-  const pose = [...frame.pose!];
-  const face = [...frame.face!];
-  const set = (arr: typeof pose, i: number, v?: [number, number, number]) => {
-    if (v) arr[i] = { x: v[0], y: v[1], z: v[2], visibility: 1 };
-  };
-
-  set(pose, 11, o.shoulderL ?? [0.4, 0.5, 0]);
-  set(pose, 12, o.shoulderR ?? [0.6, 0.5, 0]);
-  set(pose, 23, o.hipL ?? [0.42, 0.8, 0]);
-  set(pose, 24, o.hipR ?? [0.58, 0.8, 0]);
-  set(face, 0, o.nose ?? [0.5, 0.35, 0]);
-  set(face, 7, o.earL ?? [0.42, 0.32, 0]);
-  set(face, 8, o.earR ?? [0.58, 0.32, 0]);
-  set(face, 33, o.eyeL ?? [0.45, 0.33, 0]);
-  set(face, 133, o.eyeR ?? [0.55, 0.33, 0]);
-  set(face, 105, o.browL ?? [0.45, 0.3, 0]);
-  set(face, 334, o.browR ?? [0.55, 0.3, 0]);
-
-  return { ...frame, t, pose, face };
-}
+const poseFrame = makePoseFrame;
 
 const neutral = (count: number) => Array.from({ length: count }, (_, i) => poseFrame(i * 33));
 

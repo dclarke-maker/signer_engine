@@ -12,12 +12,20 @@ import {
 } from "./signer-service";
 import { extractBearerToken } from "./signer-security";
 import {
+  getCaptureSession,
+  getNextPromptForSigner,
+  getSignerProgress,
+  skipPrompt,
+  startCaptureSession,
+} from "./session-service";
+import {
   CONSENT_SCOPES,
   CURRENT_CONSENT_VERSION,
   getCurrentConsent,
   grantConsent,
   isConsentCurrent,
   parseScopes,
+  requireCurrentConsent,
   withdrawConsent,
 } from "./consent-service";
 import { systemRouter } from "./_core/systemRouter";
@@ -131,6 +139,64 @@ export const appRouter = router({
       }
       return withdrawConsent(signer.id);
     }),
+  }),
+  capture: router({
+    nextPrompt: publicProcedure.query(async ({ ctx }) => {
+      const signer = await signerFromContext(ctx);
+      if (!signer) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to collect samples." });
+      }
+      return getNextPromptForSigner(signer.id);
+    }),
+    progress: publicProcedure.query(async ({ ctx }) => {
+      const signer = await signerFromContext(ctx);
+      if (!signer) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to view progress." });
+      }
+      return getSignerProgress(signer.id);
+    }),
+    startSession: publicProcedure
+      .input(z.object({ promptId: z.string().min(1).max(16) }))
+      .mutation(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before capturing." });
+        }
+        try {
+          await requireCurrentConsent(signer.id);
+        } catch {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Research consent is required before capture.",
+          });
+        }
+        return startCaptureSession({ signerId: signer.id, promptId: input.promptId });
+      }),
+    skipPrompt: publicProcedure
+      .input(z.object({ promptId: z.string().min(1).max(16), reason: z.string().trim().max(256) }))
+      .mutation(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before skipping." });
+        }
+        return skipPrompt({ signerId: signer.id, ...input });
+      }),
+    session: publicProcedure
+      .input(z.object({ sessionId: z.string().min(1).max(64) }))
+      .query(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to read a session." });
+        }
+        const session = await getCaptureSession(input.sessionId);
+        if (!session || session.signerId !== signer.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "This session belongs to another signer.",
+          });
+        }
+        return session;
+      }),
   }),
   evaluation: router({
     next: publicProcedure.query(() => ({
