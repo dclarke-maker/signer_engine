@@ -104,24 +104,43 @@ This is the sole purpose the object-storage boundary retains for video. On the p
 
 ### 4.1 Runtime Decision
 
-The proposal names **MediaPipe Holistic**. Holistic is the legacy MediaPipe Solutions API. The current MediaPipe Tasks API achieves the same coverage by running three landmarkers together, preserving the proposal's stream counts exactly.
+The proposal names **MediaPipe Holistic**, and the current MediaPipe Tasks API ships a `HolisticLandmarker` whose result carries exactly the four streams this pipeline needs — `faceLandmarks`, `poseLandmarks`, `leftHandLandmarks`, `rightHandLandmarks` — from a single model. The proposal's naming is therefore current, not legacy, and one model call yields one `LandmarkFrame` with no adaptation.
 
-**Design decision.** Landmark extraction runs through `react-native-vision-camera` frame processors calling MediaPipe Tasks via a native Expo config plugin.
+**The constraint that shapes this section.** `@mediapipe/tasks-vision` is a JavaScript/WASM package. **No React Native binding exposes hand landmarks**, which are the primary manual channel for sign language:
+
+| Package | Provides | Hands? |
+| --- | --- | --- |
+| `@mediapipe/tasks-vision@1.0.1` (Google, official) | Holistic, hand, face, pose landmarkers | Yes — but JS/WASM only |
+| `react-native-mediapipe@0.6.0` (community) | Pose, face, object detection | **No** |
+| `@thinksys/react-native-mediapipe` | Pose skeleton, untyped callback | **No** |
+
+Nothing else on npm supplies MediaPipe hand landmarks to React Native. Any native path therefore requires **writing a frame-processor plugin in Swift and Kotlin** that wraps MediaPipe Tasks directly; it is not an integration exercise.
+
+**Design decision.** Extraction sits behind `LandmarkExtractor` (§4.3) and ships in two implementations:
+
+| Implementation | Status | Notes |
+| --- | --- | --- |
+| `holistic-web-extractor` | Written, type-verified against the official package | Drives `HolisticLandmarker` from a `<video>` element. Correct stream counts by construction; needs live browser verification |
+| `fixture-extractor` | In use | Deterministic replay for CI and for every screen while the runtime path is settled |
+| Native frame processor | **Not built** | Requires custom Swift/Kotlin wrapping MediaPipe Tasks, plus Xcode / Android SDK |
 
 | Consequence | Detail |
 | --- | --- |
-| Build model | Requires `expo prebuild` and a custom development client. **Expo Go will no longer run this app.** |
-| Rejected alternative | MediaPipe Tasks JS in a WebView — stays in Expo Go but the native frame rate is not adequate for continuous signing. |
+| Build model | A native extractor requires `expo prebuild` and a custom development client. **Expo Go cannot load a frame processor.** |
 | Rejected alternative | Server-side extraction — simplest to build, but transmits frames and therefore violates §3. |
-| Known prerequisite | Vision Camera v4 frame processors require `react-native-worklets-core`. The project currently depends on `react-native-worklets@0.5.1`, which is a different package. This must be resolved before frame processors will run. |
+| Open question | Whether WASM holistic extraction sustains a usable frame rate on target devices. This decides whether the native plugin is necessary or merely preferable. |
 
 ### 4.2 Streams
 
-| Stream | Points | Source |
+One `HolisticLandmarker` call yields all four. Sizes are validated on ingest: a stream of the wrong length is recorded as absent rather than passed through, because the §5 rules index landmarks by position and a short array would silently read the wrong anatomy.
+
+| Stream | Points | Source field |
 | --- | --- | --- |
-| Hand | 21 per hand (42 total) | `HandLandmarker` |
-| Face | 468 | `FaceLandmarker`, iris refinement disabled |
-| Pose | 33 | `PoseLandmarker` |
+| Hand | 21 per hand (42 total) | `leftHandLandmarks` / `rightHandLandmarks` |
+| Face | 468 | `faceLandmarks` |
+| Pose | 33 | `poseLandmarks` |
+
+MediaPipe labels hands from the camera's point of view. A front camera mirrors the image, so the signer's left hand arrives in `rightHandLandmarks`; the mapping swaps them back, so "left hand" always means the signer's own left hand — which is what a linguistic annotation must mean.
 
 Each landmark carries `x`, `y`, `z` plus a visibility score where the task provides one. A frame in which a stream is not detected records that stream as absent rather than as zeroes, so that downstream models can distinguish "hands out of frame" from "hands at the origin".
 
@@ -458,7 +477,7 @@ Because §4.1 requires a custom development client, the mobile build path is `ex
 
 This document implements *Research Methodology — Assignment 2 (Proposal)*. Where it goes beyond the proposal, it does so in three places, each recorded above as a design decision:
 
-1. **MediaPipe Tasks instead of Holistic** (§4.1) — Holistic is the legacy API; Tasks preserves the proposal's exact stream counts.
+1. **Extraction runtime left open** (§4.1) — the proposal's `HolisticLandmarker` exists in MediaPipe Tasks and yields all four streams, but only as JS/WASM. No React Native binding supplies hand landmarks, so a native path means writing a Swift/Kotlin frame-processor plugin. The interface is fixed; the runtime behind it is not yet settled.
 2. **Consent as a versioned record** (§12.2) — the proposal requires ethics approval and community-based participatory research; this makes that operational.
 3. **Export as a first-class boundary** (§12.4) — the proposal requires ELAN annotation and ISL pre-training; this defines how data reaches them.
 
