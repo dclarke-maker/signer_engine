@@ -11,15 +11,15 @@ export default function WorkspaceScreen() {
   const activeStage = workflowQuery.data?.stage ?? ("capture" as WorkflowStage);
   const details = stageDetails[activeStage];
 
-  // The prompt-driven collection screens land in a later task. Until then the
-  // capture action is inert rather than pointing at a route that no longer exists.
-  const collectionReady = false;
-  const canOpenStage = activeStage === "translation" || collectionReady;
+  // The participant screens - consent, prompt session, live translate - land in
+  // a later task. Until then the stage action is inert rather than pointing at a
+  // route that no longer exists.
+  const screensReady = false;
 
   const openActiveStage = () => {
-    if (!canOpenStage) return;
+    if (!screensReady) return;
     if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push("/evaluation" as never);
+    router.push((activeStage === "capture" ? "/prompt-session" : "/live-translate") as never);
   };
 
   return (
@@ -52,18 +52,18 @@ export default function WorkspaceScreen() {
           <Text style={styles.cardDescription}>{details.description}</Text>
 
           <Pressable
-            disabled={!canOpenStage}
+            disabled={!screensReady}
             onPress={openActiveStage}
             style={({ pressed }) => [
               styles.primaryButton,
-              !canOpenStage && styles.primaryButtonDisabled,
+              !screensReady && styles.primaryButtonDisabled,
               pressed && styles.pressed,
             ]}
           >
             <Text style={styles.primaryButtonText}>
-              {canOpenStage ? details.action : "Collection opens shortly"}
+              {screensReady ? details.action : "Opening shortly"}
             </Text>
-            {canOpenStage ? <Text style={styles.buttonArrow}>›</Text> : null}
+            {screensReady ? <Text style={styles.buttonArrow}>›</Text> : null}
           </Pressable>
         </View>
 

@@ -11,6 +11,7 @@ import {
   signInSigner,
 } from "./signer-service";
 import { extractBearerToken } from "./signer-security";
+import { createTranslationJob, getLatestTranslationJob } from "./translation-service";
 import {
   getCaptureSession,
   getNextPromptForSigner,
@@ -198,13 +199,44 @@ export const appRouter = router({
         return session;
       }),
   }),
-  evaluation: router({
-    next: publicProcedure.query(() => ({
-      id: "initial-fixture",
-      status: "ready" as const,
-      englishResponse: "I would like to learn more about this project.",
-      sampleStatus: "fixture" as const,
-    })),
+  translation: router({
+    request: publicProcedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1).max(64),
+          frameCount: z.number().int().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before translating." });
+        }
+        const session = await getCaptureSession(input.sessionId);
+        if (!session || session.signerId !== signer.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "This session belongs to another signer.",
+          });
+        }
+        return createTranslationJob(input);
+      }),
+    next: publicProcedure
+      .input(z.object({ sessionId: z.string().min(1).max(64) }))
+      .query(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to read a translation." });
+        }
+        const session = await getCaptureSession(input.sessionId);
+        if (!session || session.signerId !== signer.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "This session belongs to another signer.",
+          });
+        }
+        return getLatestTranslationJob(input.sessionId);
+      }),
   }),
   feedback: router({
     submit: publicProcedure
