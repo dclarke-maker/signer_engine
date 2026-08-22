@@ -1,0 +1,46 @@
+export const HAND_LANDMARK_COUNT = 21;
+export const FACE_LANDMARK_COUNT = 468;
+export const POSE_LANDMARK_COUNT = 33;
+
+export type Landmark = { x: number; y: number; z: number; visibility?: number };
+
+/**
+ * One extracted frame. A stream that was not detected is `null` rather than an
+ * array of zeroes, so that "out of frame" stays distinguishable from "at the origin".
+ */
+export type LandmarkFrame = {
+  /** Milliseconds from the start of the sequence. */
+  t: number;
+  leftHand: Landmark[] | null;
+  rightHand: Landmark[] | null;
+  face: Landmark[] | null;
+  pose: Landmark[] | null;
+};
+
+export type LandmarkSequenceSummary = {
+  frameCount: number;
+  durationMs: number;
+  achievedFps: number;
+  /** Fraction of frames in which each stream was detected, 0-1. */
+  coverage: { leftHand: number; rightHand: number; face: number; pose: number };
+};
+
+export type LandmarkSequencePayload = {
+  schemaVersion: 1;
+  sessionId: string;
+  promptId: string;
+  category: string;
+  extractorId: string;
+  targetFps: number;
+  achievedFps: number;
+  frameCount: number;
+  durationMs: number;
+  frames: LandmarkFrame[];
+};
+
+export interface LandmarkExtractor {
+  readonly id: string;
+  start(options: { targetFps: number }): Promise<void>;
+  subscribe(onFrame: (frame: LandmarkFrame) => void): () => void;
+  stop(): Promise<LandmarkSequenceSummary>;
+}

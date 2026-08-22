@@ -1,9 +1,9 @@
-import type { WorkflowStage } from "../shared/workflow";
+import { type WorkflowStage } from "../shared/workflow";
 
 export const defaultWorkflowStage: WorkflowStage = "capture";
 
 export function resolveWorkflowStage(value: string | undefined): WorkflowStage {
-  return value === "evaluation" ? "evaluation" : defaultWorkflowStage;
+  return value === "translation" ? "translation" : defaultWorkflowStage;
 }
 
 export function getWorkflowConfig() {
