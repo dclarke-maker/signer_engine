@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  IOSConfig,
   withDangerousMod,
   withAppBuildGradle,
   withMainApplication,
@@ -13,10 +14,10 @@ const {
  * generates. Native sources live in `native/holistic/` so they survive a
  * `--clean` prebuild; this plugin copies them in and adds the dependencies.
  *
- * The model file is NOT vendored - it is ~130MB. `scripts/fetch-holistic-model.sh`
- * downloads it into `native/holistic/models/`, and this plugin fails the build
- * with a clear message if it is missing, rather than producing an app that
- * silently detects nothing.
+ * The model is committed at `native/holistic/models/` (13 MB) so EAS, which
+ * prebuilds on its own machines, receives it. This plugin still fails with a
+ * clear message if it is absent, rather than producing an app that builds and
+ * then silently detects nothing.
  */
 const MODEL_FILE = "holistic_landmarker.task";
 const IOS_POD = "MediaPipeTasksVision";
@@ -30,8 +31,8 @@ function requireModel(projectRoot) {
   if (!fs.existsSync(modelPath)) {
     throw new Error(
       `[mediapipe-holistic] ${MODEL_FILE} not found at ${modelPath}.\n` +
-        "Run scripts/fetch-holistic-model.sh before prebuilding. The model is not " +
-        "committed because of its size.",
+        "It should be committed. If it is missing, run scripts/fetch-holistic-model.sh " +
+        "and verify the checksum in native/holistic/models/README.md.",
     );
   }
   return modelPath;
@@ -80,23 +81,33 @@ const withIosPod = (config) =>
     },
   ]);
 
-/** iOS: register the copied sources and the model with the Xcode target. */
+/**
+ * iOS: register the copied sources and the model with the Xcode target.
+ *
+ * Uses the config-plugins helpers rather than xcode's raw addSourceFile and
+ * addResourceFile: those take a group key that must already exist, and passing
+ * the null returned by findPBXGroupKey fails deep inside the library with
+ * "Cannot read properties of null". The helpers create the group when missing.
+ */
 const withIosTargets = (config) =>
   withXcodeProject(config, (cfg) => {
     const project = cfg.modResults;
     const groupName = cfg.modRequest.projectName;
 
     for (const file of ["HolisticFrameProcessorPlugin.swift", "HolisticFrameProcessorPlugin.m"]) {
-      if (!project.hasFile(`${groupName}/${file}`)) {
-        project.addSourceFile(`${groupName}/${file}`, {}, project.findPBXGroupKey({ name: groupName }));
-      }
+      const filepath = `${groupName}/${file}`;
+      if (project.hasFile(filepath)) continue;
+      IOSConfig.XcodeUtils.addBuildSourceFileToGroup({ filepath, groupName, project });
     }
-    if (!project.hasFile(`${groupName}/${MODEL_FILE}`)) {
-      project.addResourceFile(
-        `${groupName}/${MODEL_FILE}`,
-        {},
-        project.findPBXGroupKey({ name: groupName }),
-      );
+
+    const modelPath = `${groupName}/${MODEL_FILE}`;
+    if (!project.hasFile(modelPath)) {
+      IOSConfig.XcodeUtils.addResourceFileToGroup({
+        filepath: modelPath,
+        groupName,
+        project,
+        isBuildFile: true,
+      });
     }
     return cfg;
   });

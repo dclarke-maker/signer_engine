@@ -103,6 +103,9 @@ const config: ExpoConfig = {
         // microphone permission the app never uses would undercut that claim.
         cameraPermission:
           "Allow $(PRODUCT_NAME) to read motion points while you sign. No video is recorded or saved.",
+        // `false` removes the key outright. Omitting it applies expo-camera's
+        // default microphone string, which this app would never justify.
+        microphonePermission: false,
         recordAudioAndroid: false,
       },
     ],

@@ -136,6 +136,8 @@ npx eas-cli@latest build --profile development --platform android
 
 Once the development client is installed, `pnpm dev` drives it as usual.
 
+Both platforms have been prebuilt and the generated projects verified: the Kotlin and Swift sources land in the right packages, the model is registered as an Android asset and an iOS bundle resource, the MediaPipe dependency is added to Gradle and the Podfile, and the frame-processor package is registered in `MainApplication`. Only compilation itself remains unproven.
+
 ### Building locally instead
 
 ```bash
