@@ -27,8 +27,12 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
   private static let floatsPerLandmark = 4
 
   private let landmarker: HolisticLandmarker?
+  /// FrameProcessorPlugin takes the proxy in its initialiser but does not store
+  /// it, so allocating a SharedArray later needs our own reference.
+  private let cameraProxy: VisionCameraProxyHolder
 
   public override init(proxy: VisionCameraProxyHolder, options: [AnyHashable: Any]? = nil) {
+    self.cameraProxy = proxy
     self.landmarker = Self.makeLandmarker()
     super.init(proxy: proxy, options: options)
   }
@@ -102,7 +106,7 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
     // SharedArray is a uint8 buffer, so the float payload is copied in as bytes.
     // On the JS side `new Float32Array(buffer)` reads it back directly.
     let byteCount = totalFloats * MemoryLayout<Float>.size
-    let shared = SharedArray(proxy: self.proxy, allocateWithSize: byteCount)
+    let shared = SharedArray(proxy: self.cameraProxy, allocateWithSize: byteCount)
     packed.withUnsafeBytes { source in
       guard let base = source.baseAddress else { return }
       memcpy(shared.data, base, byteCount)
