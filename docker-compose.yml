@@ -53,7 +53,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: build
+      target: migrate
     environment:
       DATABASE_URL: mysql://signbridge:${MYSQL_PASSWORD:-signbridge-local-password}@mariadb:3306/signbridge
     command: ["pnpm", "drizzle-kit", "migrate"]
