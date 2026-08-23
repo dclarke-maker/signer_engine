@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -14,12 +14,20 @@ const GUARANTEES = [
 
 export default function ConsentScreen() {
   const utils = trpc.useUtils();
+  const signerQuery = trpc.signer.me.useQuery();
   const statusQuery = trpc.consent.status.useQuery();
   const grant = trpc.consent.grant.useMutation();
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Consent is recorded against a signer, so this screen is unreachable without
+  // one. Without this guard an unauthenticated visitor could read the whole
+  // screen and only discover the problem on submit.
+  useEffect(() => {
+    if (!signerQuery.isLoading && !signerQuery.data) router.replace("/sign-in");
+  }, [signerQuery.data, signerQuery.isLoading]);
 
   const agree = async () => {
-    setFailed(false);
+    setError(null);
     try {
       await grant.mutateAsync({
         consentVersion: statusQuery.data?.consentVersion ?? "v1",
@@ -27,12 +35,19 @@ export default function ConsentScreen() {
       });
       await utils.consent.status.invalidate();
       router.replace("/prompt-session");
-    } catch {
-      setFailed(true);
+    } catch (err) {
+      // Distinguish "your session expired" from "the network is down"; the
+      // remedies are different and the old copy always claimed the latter.
+      const message = err instanceof Error ? err.message : "";
+      setError(
+        /sign in|unauthor/i.test(message)
+          ? "Your session has expired. Please sign in again, then give consent."
+          : "Your consent could not be recorded. Please check your connection and try again.",
+      );
     }
   };
 
-  if (statusQuery.isLoading) {
+  if (statusQuery.isLoading || signerQuery.isLoading) {
     return (
       <ScreenContainer edges={["top", "bottom", "left", "right"]}>
         <View style={styles.loading}>
@@ -90,11 +105,7 @@ export default function ConsentScreen() {
         </ScrollView>
 
         <View style={styles.actions}>
-          {failed ? (
-            <Text style={styles.errorText}>
-              Your consent could not be recorded. Please check your connection and try again.
-            </Text>
-          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <Pressable
             disabled={grant.isPending}
             onPress={agree}

@@ -40,10 +40,15 @@ export default function PromptSessionScreen() {
   }, [signerQuery.data, signerQuery.isLoading]);
 
   useEffect(() => {
+    // Only once a signer is known. Both redirects previously fired for an
+    // unauthenticated visitor and this one landed last, so they reached the
+    // consent screen instead of sign-in - and consenting then failed as
+    // unauthorized.
+    if (!signerQuery.data) return;
     if (!consentQuery.isLoading && consentQuery.data && !consentQuery.data.granted) {
       router.replace("/consent");
     }
-  }, [consentQuery.data, consentQuery.isLoading]);
+  }, [signerQuery.data, consentQuery.data, consentQuery.isLoading]);
 
   const prompt = promptQuery.data;
 
