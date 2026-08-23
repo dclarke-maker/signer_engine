@@ -259,9 +259,17 @@ class HolisticFrameProcessorPlugin(
     return bitmap.rotated(rotationDegrees)
   }
 
+  /**
+   * Rotation allocates a second bitmap, so the source is released rather than
+   * left for the collector - at 30fps a full-resolution ARGB_8888 bitmap per
+   * frame is tens of megabytes a second of garbage. createBitmap copies the
+   * pixels, so recycling the source afterwards is safe.
+   */
   private fun Bitmap.rotated(degrees: Int): Bitmap {
     if (degrees == 0) return this
     val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+    val rotated = Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+    if (rotated !== this) recycle()
+    return rotated
   }
 }
