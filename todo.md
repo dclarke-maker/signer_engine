@@ -11,7 +11,7 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 
 - [x] ~~Build the Android plugin.~~ **Compiles and ships.** Build `30b6b222` succeeded; the APK carries `HolisticFrameProcessorPlugin`, its package registration, and the model STORED-uncompressed so MediaPipe can memory-map it. Two fixes were needed: an `expo-dev-client` version mismatch, and `frame.imageProxy.toBitmap()` replaced with `frame.image`.
 - [ ] **Build the Swift plugin.** Never compiled — an Android build does not touch it. `npx eas build --profile ios-simulator --platform ios` needs no Apple account and will prove it.
-- [ ] **Install the APK on a device and confirm extraction actually works.** Compiling proves nothing about output. Check face 468 / pose 33 / 21 per hand, the achieved frame rate, and that decoded frames match `encodeHolisticBuffer`.
+- [ ] **Install the APK on a device and confirm extraction actually works.** Compiling proves nothing about output. Follow `docs/device-verification.md`, which lists the numbers and what they mean. Needs an Android device that is not HarmonyOS NEXT.
 - [ ] **Verify against the wire format.** `encodeHolisticBuffer` in `lib/extractors/holistic-buffer.ts` is the executable spec; confirm the native writers produce a buffer the decoder accepts, then check face 468, pose 33, 21 per hand, and the achieved frame rate.
 - [ ] Give the web extractor a `<video>` source. `expo-camera`'s `CameraView` renders one internally on web but does not expose a ref, so this needs a web-specific capture path or a plain `getUserMedia` element.
 
