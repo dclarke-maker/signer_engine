@@ -24,7 +24,7 @@ describe("extractor shape", () => {
   });
 
   it("recognises a push extractor, which a frame processor must feed", () => {
-    // Rendering a camera that never calls acceptBuffer would leave this
+    // Rendering a camera that never calls acceptPackedFrame would leave this
     // producing nothing at all, with no error - the failure this guard exists
     // to prevent.
     const push: LandmarkExtractor = {
@@ -32,12 +32,12 @@ describe("extractor shape", () => {
       start: async () => {},
       subscribe: () => () => {},
       stop: summary,
-      acceptBuffer: () => {},
+      acceptPackedFrame: () => {},
     };
     expect(needsPushedFrames(push)).toBe(true);
   });
 
-  it("treats an extractor without acceptBuffer as pull", () => {
+  it("treats an extractor without acceptPackedFrame as pull", () => {
     const pull: LandmarkExtractor = {
       id: "pull@1",
       start: async () => {},
@@ -47,18 +47,18 @@ describe("extractor shape", () => {
     expect(needsPushedFrames(pull)).toBe(false);
   });
 
-  it("narrows the type so a caller can invoke acceptBuffer safely", () => {
+  it("narrows the type so a caller can invoke acceptPackedFrame safely", () => {
     let received = 0;
     const push: LandmarkExtractor = {
       id: "push@1",
       start: async () => {},
       subscribe: () => () => {},
       stop: summary,
-      acceptBuffer: () => {
+      acceptPackedFrame: () => {
         received += 1;
       },
     };
-    if (needsPushedFrames(push)) push.acceptBuffer(new ArrayBuffer(0));
+    if (needsPushedFrames(push)) push.acceptPackedFrame("");
     expect(received).toBe(1);
   });
 });

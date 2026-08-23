@@ -1,7 +1,7 @@
 import { useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { LandmarkCamera } from "@/components/landmark-camera";
@@ -23,6 +23,10 @@ export default function CaptureScreen() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [frameCount, setFrameCount] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  // Set when the camera cannot drive this extractor at all. Distinct from
+  // `message`, which reports a failure of one attempt; this one is permanent
+  // for the session and must block recording rather than just report.
+  const [blocked, setBlocked] = useState<string | null>(null);
 
   const framesRef = useRef<LandmarkFrame[]>([]);
   const extractorRef = useRef(getExtractor());
@@ -34,7 +38,11 @@ export default function CaptureScreen() {
     return () => clearInterval(id);
   }, [isCapturing]);
 
+  // Stable so LandmarkCamera's effect does not re-fire every render.
+  const handleUnavailable = useCallback((reason: string) => setBlocked(reason), []);
+
   const begin = async () => {
+    if (blocked) return;
     setMessage(null);
     framesRef.current = [];
     setFrameCount(0);
@@ -112,7 +120,11 @@ export default function CaptureScreen() {
 
   return (
     <View style={styles.fullScreen}>
-      <LandmarkCamera extractor={extractorRef.current} active={isCapturing} />
+      <LandmarkCamera
+        extractor={extractorRef.current}
+        active={isCapturing}
+        onUnavailable={handleUnavailable}
+      />
       <ScreenContainer
         edges={["top", "bottom", "left", "right"]}
         containerClassName="bg-transparent"
@@ -148,20 +160,24 @@ export default function CaptureScreen() {
             {nepali ? <Text style={styles.promptText}>{nepali}</Text> : null}
             {text ? <Text style={styles.promptEnglish}>{text}</Text> : null}
             <Text style={styles.controlText}>
-              {isCapturing
-                ? `${frameCount} motion frames read. Tap stop when you finish.`
-                : "Sign at your natural pace. Nothing is recorded — only motion points."}
+              {blocked
+                ? blocked
+                : isCapturing
+                  ? `${frameCount} motion frames read. Tap stop when you finish.`
+                  : "Sign at your natural pace. Nothing is recorded — only motion points."}
             </Text>
             <Pressable
+              disabled={!!blocked}
               onPress={isCapturing ? finish : begin}
               style={({ pressed }) => [
                 isCapturing ? styles.stopButton : styles.recordButton,
+                !!blocked && styles.disabled,
                 pressed && styles.pressed,
               ]}
             >
               <View style={isCapturing ? styles.stopSymbol : styles.recordSymbol} />
               <Text style={styles.recordButtonText}>
-                {isCapturing ? "Stop and review" : "Start signing"}
+                {blocked ? "Camera unavailable" : isCapturing ? "Stop and review" : "Start signing"}
               </Text>
             </Pressable>
             {message ? <Text style={styles.errorText}>{message}</Text> : null}
@@ -278,5 +294,6 @@ const styles = StyleSheet.create({
   stopSymbol: { width: 15, height: 15, borderRadius: 3, backgroundColor: "#FFFFFF" },
   recordButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
   errorText: { color: "#B91C1C", fontSize: 13, lineHeight: 18, marginTop: 3 },
+  disabled: { opacity: 0.5 },
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.9 },
 });

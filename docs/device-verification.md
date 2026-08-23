@@ -38,6 +38,25 @@ create a Pixel with an **arm64** system image, then in the device's Advanced
 Settings set the front camera to **Webcam0** — without that it renders a
 synthetic scene with no hands in it, and MediaPipe will correctly find nothing.
 
+Also set the **back** camera to `none`. A Mac has one webcam, the emulator can
+map it to only one virtual camera, and with both set to `webcam0` it binds the
+back one — leaving no front-facing device at all. The capture screen asks for
+the front lens, so the whole pipeline sits idle behind a black preview. Check
+it took with:
+
+```bash
+adb shell dumpsys media.camera | grep -E "Number of camera devices|Facing:"
+```
+
+Expect one device and `Facing: Front`.
+
+Two emulator-only results to expect, neither a defect:
+
+- **`ready on CPU`, not GPU.** The emulator's GL rejects the delegate with
+  `GL_INVALID_ENUM`. The CPU fallback is doing its job; check the delegate again
+  on real hardware.
+- **Poor frame rate.** Already true of emulators generally, and more so on CPU.
+
 The APK ships `arm64-v8a`, so it runs natively on an Apple Silicon Mac.
 
 Frame rate from an emulator says nothing useful: a development machine will beat
@@ -97,7 +116,7 @@ fieldwork rather than during it.
 ## 5. The buffer actually decodes
 
 `lib/extractors/holistic-buffer.ts` is the wire-format authority, and its
-`encodeHolisticBuffer` is the executable specification the Kotlin and Swift
+`encodeHolisticBase64` is the executable specification the Kotlin and Swift
 writers must match. If the two disagree, the decoder throws and the frame is
 dropped and counted rather than surfacing an error.
 
@@ -105,6 +124,19 @@ So: a capture that reports **far fewer frames than the elapsed time implies** is
 the symptom of a format mismatch, not slowness. Compare `frameCount` against
 `duration × fps`. A large shortfall means the native writer and the decoder
 disagree about the layout.
+
+The packed bytes cross the worklet boundary as a **base64 string**, not an
+ArrayBuffer. This is not a stylistic choice: `Worklets.createRunOnJS` converts
+each argument to a worklets-core shared value, and that converter throws on
+ArrayBuffers outright. The symptom, if a writer ever returns one again, is this
+in logcat on every frame, with a capture that reports zero frames:
+
+```
+E ReactNativeJS: [Frame Processor Error: Array buffers are not supported as shared values.]
+```
+
+Byte order is little-endian, pinned explicitly by both writers rather than
+inherited from the host.
 
 ## 6. End to end
 

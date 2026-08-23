@@ -1,4 +1,4 @@
-import { decodeHolisticBuffer } from "./holistic-buffer";
+import { decodeHolisticBase64 } from "./holistic-buffer";
 import type {
   LandmarkExtractor,
   LandmarkFrame,
@@ -22,7 +22,8 @@ export type NativeHolisticOptions = {
  * (calling the native plugin) and hands the packed buffer across; decoding,
  * counting, and notifying all happen here, on JS, where the state actually
  * lives. `LandmarkCamera` owns the worklet side and marshals via
- * `Worklets.createRunOnJS`.
+ * `Worklets.createRunOnJS`, which cannot carry an ArrayBuffer - so the packed
+ * frame arrives base64-encoded. See lib/extractors/holistic-buffer.ts.
  *
  * Frames are measured and released. Nothing is retained, encoded, or written.
  */
@@ -38,8 +39,8 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
   const detected = { leftHand: 0, rightHand: 0, face: 0, pose: 0 };
 
   const extractor: LandmarkExtractor & {
-    /** Called on the JS thread with a buffer produced by the frame processor. */
-    acceptBuffer(buffer: ArrayBuffer): void;
+    /** Called on the JS thread with a packed frame from the frame processor. */
+    acceptPackedFrame(packed: string): void;
     readonly decodeFailures: number;
     readonly isRunning: boolean;
   } = {
@@ -60,12 +61,12 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
       };
     },
 
-    acceptBuffer(buffer: ArrayBuffer) {
+    acceptPackedFrame(packed: string) {
       if (!running) return;
 
       let decoded: LandmarkFrame;
       try {
-        decoded = decodeHolisticBuffer(buffer, { mirrored });
+        decoded = decodeHolisticBase64(packed, { mirrored });
       } catch {
         // A malformed frame is dropped and counted rather than thrown. Throwing
         // would abort a capture mid-session and lose every good frame already

@@ -1,12 +1,14 @@
 import { CameraView } from "expo-camera";
-import { useMemo } from "react";
-import { StyleSheet, type ViewStyle } from "react-native";
+import { useEffect, useMemo } from "react";
+import { StyleSheet, Text, View, type ViewStyle } from "react-native";
 import {
   Camera,
   VisionCameraProxy,
   runAtTargetFps,
   useCameraDevice,
+  useCameraDevices,
   useFrameProcessor,
+  type CameraDevice,
   type Frame,
 } from "react-native-vision-camera";
 import { Worklets } from "react-native-worklets-core";
@@ -21,7 +23,29 @@ export type LandmarkCameraProps = {
   /** True while a capture is running; frames are only processed when set. */
   active: boolean;
   style?: ViewStyle;
+  /**
+   * Called when this extractor cannot be driven, with a reason fit to show a
+   * participant. Screens use it to refuse to start a capture that could only
+   * produce an empty sequence.
+   */
+  onUnavailable?: (reason: string) => void;
 };
+
+/**
+ * Picks the lens to sign into.
+ *
+ * Front is the only sensible lens on a phone - the signer has to see
+ * themselves - but `useCameraDevice('front')` matches lens facing exactly, and
+ * a USB or Continuity webcam reports `external`. Tablets and desk setups used
+ * in the workshop are the case that matters, so external is accepted as a
+ * second choice. Back is never used: a signer who cannot see the frame cannot
+ * tell whether they stayed in it, and the sample would be unusable.
+ */
+function useSigningDevice(): CameraDevice | undefined {
+  const front = useCameraDevice("front");
+  const devices = useCameraDevices();
+  return front ?? devices.find((d) => d.position === "external");
+}
 
 /**
  * Renders the camera the current extractor needs, and owns the thread boundary.
@@ -38,15 +62,15 @@ export type LandmarkCameraProps = {
  * `createRunOnJS`; all counting and decoding happens on JS, where the
  * extractor's state actually lives.
  */
-export function LandmarkCamera({ extractor, active, style }: LandmarkCameraProps) {
-  const device = useCameraDevice("front");
+export function LandmarkCamera({ extractor, active, style, onUnavailable }: LandmarkCameraProps) {
+  const device = useSigningDevice();
   const pushed = needsPushedFrames(extractor);
 
   // Memoized so the worklet does not recapture a new function every render.
   const deliver = useMemo(
     () =>
       pushed
-        ? Worklets.createRunOnJS((buffer: ArrayBuffer) => extractor.acceptBuffer(buffer))
+        ? Worklets.createRunOnJS((packed: string) => extractor.acceptPackedFrame(packed))
         : null,
     [extractor, pushed],
   );
@@ -65,8 +89,11 @@ export function LandmarkCamera({ extractor, active, style }: LandmarkCameraProps
       // then discarded.
       runAtTargetFps(TARGET_FPS, () => {
         "worklet";
+        // A string, not an ArrayBuffer: createRunOnJS converts each argument
+        // to a worklets-core shared value, and that converter rejects
+        // ArrayBuffers. The plugin base64-encodes the packed frame instead.
         const packed = plugin.call(frame, { timestampMs: frame.timestamp });
-        if (packed instanceof ArrayBuffer) deliver(packed);
+        if (typeof packed === "string") deliver(packed);
       });
     },
     [deliver, plugin],
@@ -77,16 +104,30 @@ export function LandmarkCamera({ extractor, active, style }: LandmarkCameraProps
   // plugin - and pairing a push extractor with a plain preview would produce a
   // capture of zero frames with no error, so that combination is refused.
   const canPush = pushed && device != null && plugin != null;
+  const unavailableReason =
+    pushed && !canPush
+      ? device == null
+        ? "No front-facing camera was found on this device, so motion points cannot be read."
+        : "This build cannot read motion points. Please reinstall the app from the study link."
+      : null;
+
+  // Reported to the screen so it can refuse to start. Previously this was a
+  // __DEV__ console warning, which is compiled out of the builds participants
+  // actually receive - they saw a black preview, a running timer, and a sample
+  // with no frames in it, with nothing explaining why.
+  useEffect(() => {
+    if (unavailableReason) onUnavailable?.(unavailableReason);
+  }, [unavailableReason, onUnavailable]);
+
+  if (unavailableReason) {
+    return (
+      <View style={[style ?? StyleSheet.absoluteFill, styles.unavailable]}>
+        <Text style={styles.unavailableText}>{unavailableReason}</Text>
+      </View>
+    );
+  }
 
   if (!canPush) {
-    if (pushed && __DEV__) {
-      console.warn(
-        "[LandmarkCamera] This extractor needs a frame processor, but " +
-          `${device == null ? "no camera device was found" : "the holistic plugin is not registered"}. ` +
-          "Showing a preview only - captures will contain no frames. " +
-          "Run 'npx expo prebuild' and rebuild the development client.",
-      );
-    }
     return <CameraView style={style ?? StyleSheet.absoluteFill} facing="front" />;
   }
 
@@ -106,3 +147,13 @@ export function LandmarkCamera({ extractor, active, style }: LandmarkCameraProps
     />
   );
 }
+
+const styles = StyleSheet.create({
+  unavailable: {
+    backgroundColor: "#102A43",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 28,
+  },
+  unavailableText: { color: "#FFFFFF", fontSize: 16, lineHeight: 24, textAlign: "center" },
+});

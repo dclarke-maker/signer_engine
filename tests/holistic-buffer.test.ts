@@ -4,7 +4,11 @@ import {
   HOLISTIC_BUFFER_VERSION,
   HOLISTIC_HEADER_FLOATS,
   HolisticBufferError,
+  arrayBufferToBase64,
+  base64ToArrayBuffer,
+  decodeHolisticBase64,
   decodeHolisticBuffer,
+  encodeHolisticBase64,
   encodeHolisticBuffer,
 } from "../lib/extractors/holistic-buffer";
 import {
@@ -122,5 +126,70 @@ describe("holistic buffer codec", () => {
     // pose sits after the face block
     const poseBase = HOLISTIC_HEADER_FLOATS + FACE_LANDMARK_COUNT * 4;
     expect(data[poseBase + 3]).toBe(1);
+  });
+});
+
+describe("base64 transport", () => {
+  // The frame processor's result reaches JS through createRunOnJS, which
+  // rejects ArrayBuffers as shared values, so the packed bytes travel as a
+  // string. These tests pin that encoding, because a mismatch between the
+  // native writers and this reader shows up only as silently dropped frames.
+  it("round-trips a complete frame through base64", () => {
+    const frame = decodeHolisticBase64(encodeHolisticBase64(complete()), { mirrored: false });
+
+    expect(frame.t).toBe(1234);
+    expect(frame.face).toHaveLength(FACE_LANDMARK_COUNT);
+    expect(frame.pose).toHaveLength(POSE_LANDMARK_COUNT);
+    expect(frame.leftHand?.[0]).toEqual({ x: 3, y: 0, z: -3, visibility: 0.5 });
+    expect(frame.rightHand?.[0]).toEqual({ x: 4, y: 0, z: -4, visibility: 0.5 });
+  });
+
+  it("still swaps hands when mirrored", () => {
+    const frame = decodeHolisticBase64(encodeHolisticBase64(complete()), { mirrored: true });
+    expect(frame.leftHand?.[0].x).toBe(4);
+    expect(frame.rightHand?.[0].x).toBe(3);
+  });
+
+  it("encodes the header little-endian, as the native writers must", () => {
+    // A header-only frame: version 1, timestamp 2, all four counts zero.
+    // 1.0f = 0x3F800000 and 2.0f = 0x40000000, little-endian byte order.
+    const packed = encodeHolisticBase64({
+      t: 2,
+      face: null,
+      pose: null,
+      leftHand: null,
+      rightHand: null,
+    });
+
+    expect(Array.from(new Uint8Array(base64ToArrayBuffer(packed)))).toEqual([
+      0x00, 0x00, 0x80, 0x3f, // version 1
+      0x00, 0x00, 0x00, 0x40, // t 2
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // four zero counts
+    ]);
+    expect(packed).toBe("AACAPwAAAEAAAAAAAAAAAAAAAAAAAAAA");
+  });
+
+  it("pads base64 the way the native encoders do", () => {
+    // Byte counts not divisible by three are where hand-rolled encoders and
+    // platform ones tend to disagree.
+    expect(arrayBufferToBase64(new Uint8Array([1]).buffer)).toBe("AQ==");
+    expect(arrayBufferToBase64(new Uint8Array([1, 2]).buffer)).toBe("AQI=");
+    expect(arrayBufferToBase64(new Uint8Array([1, 2, 3]).buffer)).toBe("AQID");
+    for (const s of ["AQ==", "AQI=", "AQID"]) {
+      expect(arrayBufferToBase64(base64ToArrayBuffer(s))).toBe(s);
+    }
+  });
+
+  it("rejects a payload that is not base64", () => {
+    expect(() => decodeHolisticBase64("not base64!", { mirrored: false })).toThrow(
+      HolisticBufferError,
+    );
+  });
+
+  it("rejects a payload that is not a whole number of floats", () => {
+    // Five bytes: enough to decode, but not a float32 boundary.
+    expect(() =>
+      decodeHolisticBase64(arrayBufferToBase64(new Uint8Array(5).buffer), { mirrored: false }),
+    ).toThrow(HolisticBufferError);
   });
 });

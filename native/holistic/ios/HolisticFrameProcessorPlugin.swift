@@ -4,7 +4,7 @@ import VisionCamera
 
 /**
  * Runs MediaPipe HolisticLandmarker over each camera frame and returns one
- * packed Float32 buffer.
+ * packed Float32 buffer, base64-encoded.
  *
  * The layout is specified and unit-tested in `lib/extractors/holistic-buffer.ts`,
  * which is the authority for this encoding:
@@ -17,6 +17,13 @@ import VisionCamera
  * ~543 landmarks; bridging that as nested objects every frame would dominate the
  * frame budget.
  *
+ * It is returned as base64 rather than a SharedArray because the result is
+ * handed to JS through Worklets.createRunOnJS, whose shared-value converter
+ * rejects ArrayBuffers and wraps arrays element by element. A string crosses
+ * as one copy. Bytes are little-endian, matching the reader; every Apple
+ * platform this ships to is little-endian, and the conversion below is
+ * explicit rather than relying on that.
+ *
  * Nothing here retains, encodes, or writes a frame. The sample buffer is read
  * within the call and released by VisionCamera.
  */
@@ -27,12 +34,8 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
   private static let floatsPerLandmark = 4
 
   private let landmarker: HolisticLandmarker?
-  /// FrameProcessorPlugin takes the proxy in its initialiser but does not store
-  /// it, so allocating a SharedArray later needs our own reference.
-  private let cameraProxy: VisionCameraProxyHolder
 
   public override init(proxy: VisionCameraProxyHolder, options: [AnyHashable: Any]? = nil) {
-    self.cameraProxy = proxy
     self.landmarker = Self.makeLandmarker()
     super.init(proxy: proxy, options: options)
   }
@@ -103,14 +106,12 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
       }
     }
 
-    // SharedArray is a uint8 buffer, so the float payload is copied in as bytes.
-    // On the JS side `new Float32Array(buffer)` reads it back directly.
-    let byteCount = totalFloats * MemoryLayout<Float>.size
-    let shared = SharedArray(proxy: self.cameraProxy, allocateWithSize: byteCount)
-    packed.withUnsafeBytes { source in
-      guard let base = source.baseAddress else { return }
-      memcpy(shared.data, base, byteCount)
+    var bytes = Data(capacity: totalFloats * MemoryLayout<UInt32>.size)
+    for value in packed {
+      // littleEndian is a no-op on Apple silicon and Intel, but stating it
+      // keeps the byte order a property of the format rather than the host.
+      withUnsafeBytes(of: value.bitPattern.littleEndian) { bytes.append(contentsOf: $0) }
     }
-    return shared
+    return bytes.base64EncodedString()
   }
 }

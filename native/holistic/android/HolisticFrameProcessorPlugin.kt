@@ -9,16 +9,16 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.holisticlandmarker.HolisticLandmarker
 import com.google.mediapipe.tasks.vision.holisticlandmarker.HolisticLandmarkerResult
 import android.media.Image
+import android.util.Base64
 import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
-import com.mrousavy.camera.frameprocessors.SharedArray
 import com.mrousavy.camera.frameprocessors.VisionCameraProxy
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
  * Runs MediaPipe HolisticLandmarker over each camera frame and returns one
- * packed Float32 buffer.
+ * packed Float32 buffer, base64-encoded.
  *
  * The layout is specified and unit-tested in `lib/extractors/holistic-buffer.ts`,
  * which is the authority for this encoding:
@@ -30,6 +30,11 @@ import java.nio.ByteOrder
  * A packed buffer is used rather than a map because a holistic result is ~543
  * landmarks; bridging that as nested objects every frame would dominate the
  * frame budget.
+ *
+ * It is returned as base64 rather than a SharedArray because the result is
+ * handed to JS through Worklets.createRunOnJS, whose shared-value converter
+ * rejects ArrayBuffers and wraps arrays element by element. A string crosses
+ * as one copy. Bytes are little-endian, matching the reader.
  *
  * Nothing here retains, encodes, or writes a frame.
  */
@@ -43,6 +48,7 @@ class HolisticFrameProcessorPlugin(
     const val SCHEMA_VERSION = 1f
     const val HEADER_FLOATS = 6
     const val FLOATS_PER_LANDMARK = 4
+    const val BYTES_PER_FLOAT = 4
     const val MODEL_ASSET = "holistic_landmarker.task"
     const val BYTES_PER_PIXEL = 4
   }
@@ -110,10 +116,10 @@ class HolisticFrameProcessorPlugin(
     )
 
     val totalFloats = HEADER_FLOATS + streams.sumOf { it.size } * FLOATS_PER_LANDMARK
-    val byteCount = totalFloats * 4
+    val byteCount = totalFloats * BYTES_PER_FLOAT
 
-    val shared = SharedArray(proxy, byteCount)
-    val buffer: ByteBuffer = shared.byteBuffer.order(ByteOrder.nativeOrder())
+    val bytes = ByteArray(byteCount)
+    val buffer: ByteBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
     val floats = buffer.asFloatBuffer()
 
     floats.put(0, SCHEMA_VERSION)
@@ -131,7 +137,9 @@ class HolisticFrameProcessorPlugin(
       }
     }
 
-    return shared
+    // NO_WRAP: the default inserts newlines, which would inflate every frame
+    // and force the reader to strip them.
+    return Base64.encodeToString(bytes, Base64.NO_WRAP)
   }
 
   /**

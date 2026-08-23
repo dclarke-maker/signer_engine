@@ -39,7 +39,7 @@ export default function WorkspaceScreen() {
               <Text style={styles.stagePillText}>{details.badge}</Text>
             </View>
             <Text style={[styles.configLabel, workflowQuery.isError && styles.configError]}>
-              {workflowQuery.isLoading ? "Checking API" : workflowQuery.isError ? "Using safe fallback" : `API v${workflowQuery.data?.version}`}
+              {workflowQuery.isLoading ? "Checking API" : workflowQuery.isError ? "Using safe fallback" : `API ${workflowQuery.data?.version}`}
             </Text>
           </View>
           <Text style={styles.cardTitle}>{details.title}</Text>

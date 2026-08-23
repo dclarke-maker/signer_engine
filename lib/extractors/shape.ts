@@ -10,6 +10,6 @@ import type { LandmarkExtractor } from "@/shared/landmarks";
  */
 export function needsPushedFrames(
   extractor: LandmarkExtractor,
-): extractor is LandmarkExtractor & { acceptBuffer(buffer: ArrayBuffer): void } {
-  return typeof extractor.acceptBuffer === "function";
+): extractor is LandmarkExtractor & { acceptPackedFrame(packed: string): void } {
+  return typeof extractor.acceptPackedFrame === "function";
 }

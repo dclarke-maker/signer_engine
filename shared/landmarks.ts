@@ -53,5 +53,5 @@ export interface LandmarkExtractor {
    * silently producing nothing. `needsPushedFrames` in lib/extractors/shape.ts
    * is how a camera decides which contract it has.
    */
-  acceptBuffer?(buffer: ArrayBuffer): void;
+  acceptPackedFrame?(packed: string): void;
 }
