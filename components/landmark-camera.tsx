@@ -1,6 +1,7 @@
+import { useIsFocused } from "@react-navigation/native";
 import { CameraView } from "expo-camera";
-import { useEffect, useMemo } from "react";
-import { StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { AppState, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import {
   Camera,
   VisionCameraProxy,
@@ -20,7 +21,12 @@ import type { LandmarkExtractor } from "@/shared/landmarks";
 
 export type LandmarkCameraProps = {
   extractor: LandmarkExtractor;
-  /** True while a capture is running; frames are only processed when set. */
+  /**
+   * True while a capture is running. This gates *processing*, not the preview:
+   * a signer has to be able to see themselves to get into frame before they
+   * start, and this screen asks them to keep their hands, face, and upper body
+   * in view.
+   */
   active: boolean;
   style?: ViewStyle;
   /**
@@ -62,9 +68,30 @@ function useSigningDevice(): CameraDevice | undefined {
  * `createRunOnJS`; all counting and decoding happens on JS, where the
  * extractor's state actually lives.
  */
+/**
+ * Whether the camera should be streaming at all.
+ *
+ * A camera left running behind another screen, or after the app is backgrounded,
+ * holds the device open and costs power for nothing - and on a screen whose
+ * whole promise is that nothing is recorded, a camera still streaming while the
+ * app is in the background is the wrong thing to do regardless of cost.
+ */
+function useCameraShouldStream(): boolean {
+  const isFocused = useIsFocused();
+  const [inForeground, setInForeground] = useState(() => AppState.currentState === "active");
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => setInForeground(next === "active"));
+    return () => sub.remove();
+  }, []);
+
+  return isFocused && inForeground;
+}
+
 export function LandmarkCamera({ extractor, active, style, onUnavailable }: LandmarkCameraProps) {
   const device = useSigningDevice();
   const pushed = needsPushedFrames(extractor);
+  const streaming = useCameraShouldStream();
 
   // Memoized so the worklet does not recapture a new function every render.
   const deliver = useMemo(
@@ -84,6 +111,10 @@ export function LandmarkCamera({ extractor, active, style, onUnavailable }: Land
     (frame: Frame) => {
       "worklet";
       if (!deliver || !plugin) return;
+      // The preview runs whenever this screen is up, so most frames arrive
+      // while nobody is capturing. Returning before plugin.call keeps the
+      // landmarker off the CPU until it is wanted.
+      if (!active) return;
       // Throttled on the camera thread: MediaPipe cannot keep pace with a
       // 60fps sensor, and pushing every frame to JS would bridge work that is
       // then discarded.
@@ -100,7 +131,7 @@ export function LandmarkCamera({ extractor, active, style, onUnavailable }: Land
         if (typeof packed === "string") deliver(packed);
       });
     },
-    [deliver, plugin],
+    [deliver, plugin, active],
   );
 
   // A pull extractor needs no frame processor. A missing device or plugin means
@@ -139,7 +170,7 @@ export function LandmarkCamera({ extractor, active, style, onUnavailable }: Land
     <Camera
       style={style ?? StyleSheet.absoluteFill}
       device={device}
-      isActive={active}
+      isActive={streaming}
       frameProcessor={frameProcessor}
       // RGBA output, so the native plugin can copy a frame straight into a
       // bitmap. The YUV default would need a colour conversion per frame.
