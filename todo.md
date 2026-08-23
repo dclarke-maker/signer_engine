@@ -10,7 +10,8 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 ## Remaining work
 
 - [x] ~~Build the Android plugin.~~ **Compiles and ships.** Build `30b6b222` succeeded; the APK carries `HolisticFrameProcessorPlugin`, its package registration, and the model STORED-uncompressed so MediaPipe can memory-map it. Two fixes were needed: an `expo-dev-client` version mismatch, and `frame.imageProxy.toBitmap()` replaced with `frame.image`.
-- [ ] **Build the Swift plugin.** Never compiled — an Android build does not touch it. `npx eas build --profile ios-simulator --platform ios` needs no Apple account and will prove it.
+- [x] ~~Build the Swift plugin.~~ **Compiles and ships.** Build `e1ea1681` (ios-simulator) succeeded; `HolisticFrameProcessorPlugin` and the `holisticLandmarks` registration are in `SignBridge.debug.dylib`, and the model is bundled. One fix was needed: `FrameProcessorPlugin` does not store the proxy it is initialised with, so the plugin keeps its own reference.
+- [ ] **Run extraction on iOS.** A simulator has no camera, so nothing above proves MediaPipe works there. Needs a device build, which needs an Apple Developer membership.
 - [ ] **Install the APK on a device and confirm extraction actually works.** Compiling proves nothing about output. Follow `docs/device-verification.md`, which lists the numbers and what they mean. Needs an Android device that is not HarmonyOS NEXT.
 - [ ] **Verify against the wire format.** `encodeHolisticBuffer` in `lib/extractors/holistic-buffer.ts` is the executable spec; confirm the native writers produce a buffer the decoder accepts, then check face 468, pose 33, 21 per hand, and the achieved frame rate.
 - [ ] Give the web extractor a `<video>` source. `expo-camera`'s `CameraView` renders one internally on web but does not expose a ref, so this needs a web-specific capture path or a plain `getUserMedia` element.
