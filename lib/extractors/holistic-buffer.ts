@@ -28,7 +28,9 @@ import {
  *
  * Layout, all float32:
  *   [0] schema version
- *   [1] timestamp, milliseconds since capture start
+ *   [1] timestamp, milliseconds from the plugin's monotonic clock. The plugin
+ *       outlives a capture, so the extractor rebases it on each capture's
+ *       first frame; the value here is not zero at the start of a capture.
  *   [2] face count        (0 or 468)
  *   [3] pose count        (0 or 33)
  *   [4] left hand count   (0 or 21)

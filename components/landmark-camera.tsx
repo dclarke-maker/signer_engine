@@ -89,10 +89,14 @@ export function LandmarkCamera({ extractor, active, style, onUnavailable }: Land
       // then discarded.
       runAtTargetFps(TARGET_FPS, () => {
         "worklet";
+        // No timestamp is passed: frame.timestamp is nanoseconds on Android
+        // and milliseconds on iOS, so the plugin stamps its own monotonic
+        // millisecond clock instead.
+        //
         // A string, not an ArrayBuffer: createRunOnJS converts each argument
         // to a worklets-core shared value, and that converter rejects
         // ArrayBuffers. The plugin base64-encodes the packed frame instead.
-        const packed = plugin.call(frame, { timestampMs: frame.timestamp });
+        const packed = plugin.call(frame);
         if (typeof packed === "string") deliver(packed);
       });
     },

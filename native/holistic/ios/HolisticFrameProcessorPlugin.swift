@@ -1,5 +1,6 @@
 import Foundation
 import MediaPipeTasksVision
+import QuartzCore
 import VisionCamera
 
 /**
@@ -35,6 +36,32 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
 
   private let landmarker: HolisticLandmarker?
 
+  /**
+   * Milliseconds from a monotonic clock.
+   *
+   * Deliberately not frame.timestamp: that is milliseconds here (CMTime
+   * presentation time) but nanoseconds on Android (CameraX ImageInfo), so a
+   * frame stamped with it means different things on the two platforms and the
+   * duration and fps derived from it are wrong by a factor of a million on one
+   * of them. MediaPipe also requires strictly increasing timestamps, hence the
+   * guard.
+   *
+   * Measured from this plugin's first frame rather than from boot: the value is
+   * carried in the buffer as a float32, which represents integers exactly only
+   * up to 2^24 - about 4.6 hours of milliseconds. A device that has been awake
+   * longer than that would start quantising its frame times.
+   */
+  private var baseTimestampMs: Int = -1
+  private var lastTimestampMs: Int = -1
+
+  private func nextTimestampMs() -> Int {
+    let now = Int(CACurrentMediaTime() * 1000)
+    if baseTimestampMs < 0 { baseTimestampMs = now }
+    let elapsed = now - baseTimestampMs
+    lastTimestampMs = elapsed > lastTimestampMs ? elapsed : lastTimestampMs + 1
+    return lastTimestampMs
+  }
+
   public override init(proxy: VisionCameraProxyHolder, options: [AnyHashable: Any]? = nil) {
     self.landmarker = Self.makeLandmarker()
     super.init(proxy: proxy, options: options)
@@ -67,12 +94,12 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
   public override func callback(_ frame: Frame, withArguments arguments: [AnyHashable: Any]?) -> Any? {
     guard let landmarker = self.landmarker else { return nil }
 
-    let timestampMs = (arguments?["timestampMs"] as? NSNumber)?.doubleValue ?? 0
+    let timestampMs = nextTimestampMs()
 
     guard let image = try? MPImage(sampleBuffer: frame.buffer),
           let result = try? landmarker.detect(
             videoFrame: image,
-            timestampInMilliseconds: Int(timestampMs)
+            timestampInMilliseconds: timestampMs
           )
     else {
       return nil

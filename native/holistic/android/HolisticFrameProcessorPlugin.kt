@@ -9,6 +9,7 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.holisticlandmarker.HolisticLandmarker
 import com.google.mediapipe.tasks.vision.holisticlandmarker.HolisticLandmarkerResult
 import android.media.Image
+import android.os.SystemClock
 import android.util.Base64
 import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
@@ -90,9 +91,35 @@ class HolisticFrameProcessorPlugin(
     return null
   }
 
+  /**
+   * Milliseconds from a monotonic clock.
+   *
+   * Deliberately not Frame.timestamp: that is nanoseconds on Android
+   * (CameraX ImageInfo) but milliseconds on iOS (CMTime presentation time), so
+   * a frame stamped with it means different things on the two platforms and
+   * the duration and fps derived from it are wrong by a factor of a million on
+   * one of them. MediaPipe also requires strictly increasing timestamps, hence
+   * the guard.
+   *
+   * Measured from this plugin's first frame rather than from boot: the value is
+   * carried in the buffer as a float32, which represents integers exactly only
+   * up to 2^24 - about 4.6 hours of milliseconds. A device that has been awake
+   * longer than that would start quantising its frame times.
+   */
+  private var baseTimestampMs = -1L
+  private var lastTimestampMs = -1L
+
+  private fun nextTimestampMs(): Long {
+    val now = SystemClock.elapsedRealtime()
+    if (baseTimestampMs < 0) baseTimestampMs = now
+    val elapsed = now - baseTimestampMs
+    lastTimestampMs = if (elapsed > lastTimestampMs) elapsed else lastTimestampMs + 1
+    return lastTimestampMs
+  }
+
   override fun callback(frame: Frame, arguments: Map<String, Any>?): Any? {
     val detector = landmarker ?: return null
-    val timestampMs = (arguments?.get("timestampMs") as? Number)?.toLong() ?: 0L
+    val timestampMs = nextTimestampMs()
 
     val result: HolisticLandmarkerResult = try {
       // frame.imageProxy is a CameraX type this module does not have on its

@@ -34,6 +34,10 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
   let running = false;
 
   let frameCount = 0;
+  // The plugin stamps time from its own first frame, and it outlives a single
+  // capture - it is created when the camera mounts and reused for every prompt.
+  // So the first frame of each capture defines that capture's zero.
+  let originT: number | null = null;
   let lastT = 0;
   let decodeFailures = 0;
   const detected = { leftHand: 0, rightHand: 0, face: 0, pose: 0 };
@@ -48,6 +52,7 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
 
     async start() {
       frameCount = 0;
+      originT = null;
       lastT = 0;
       decodeFailures = 0;
       detected.leftHand = detected.rightHand = detected.face = detected.pose = 0;
@@ -75,6 +80,9 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
         return;
       }
 
+      if (originT === null) originT = decoded.t;
+      decoded.t -= originT;
+
       frameCount += 1;
       lastT = decoded.t;
       if (decoded.leftHand) detected.leftHand += 1;
@@ -98,10 +106,14 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
       listener = null;
 
       const ratio = (n: number) => (frameCount === 0 ? 0 : n / frameCount);
+      // lastT is the offset of the final frame, so it spans frameCount - 1
+      // intervals. Dividing by it directly overstates the rate, most visibly on
+      // short captures - two frames 40ms apart would report 50fps, not 25.
+      const intervals = frameCount > 1 ? frameCount - 1 : 0;
       return {
         frameCount,
         durationMs: lastT,
-        achievedFps: lastT === 0 ? 0 : (frameCount / lastT) * 1000,
+        achievedFps: intervals === 0 || lastT === 0 ? 0 : (intervals / lastT) * 1000,
         coverage: {
           leftHand: ratio(detected.leftHand),
           rightHand: ratio(detected.rightHand),
