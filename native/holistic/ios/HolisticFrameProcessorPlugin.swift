@@ -10,7 +10,8 @@ import VisionCamera
  * The layout is specified and unit-tested in `lib/extractors/holistic-buffer.ts`,
  * which is the authority for this encoding:
  *   [0]     schema version (1)
- *   [1]     timestamp ms since capture start
+ *   [1]     timestamp ms, from this plugin's first frame. The plugin is
+ *           reused across captures, so the JS extractor rebases it.
  *   [2..5]  face / pose / leftHand / rightHand counts, 0 when undetected
  *   then    each stream in that order, four floats per landmark: x, y, z, visibility
  *
