@@ -1,4 +1,5 @@
 import type { Landmark, LandmarkFrame } from "../../shared/landmarks";
+import { toIsotropicSequence } from "./isotropic";
 
 /** Pose indices, per design.md §5.2. */
 export const POSE_SHOULDER_LEFT = 11;
@@ -49,7 +50,10 @@ function mean(values: number[]): number {
  * detection, so every rule measures against these values rather than raw units.
  * Returns null when pose or face is never detected in the opening window.
  */
-export function computeSignerBaseline(frames: LandmarkFrame[]): SignerBaseline | null {
+export function computeSignerBaseline(rawFrames: LandmarkFrame[]): SignerBaseline | null {
+  // The baseline is a set of ratios the rules subtract from, so it has to be
+  // measured in the same space they work in.
+  const frames = toIsotropicSequence(rawFrames);
   const window = frames.slice(0, BASELINE_FRAME_COUNT).filter((f) => f.pose && f.face);
   if (window.length === 0) return null;
 

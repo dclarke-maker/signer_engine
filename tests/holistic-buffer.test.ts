@@ -151,7 +151,7 @@ describe("base64 transport", () => {
   });
 
   it("encodes the header little-endian, as the native writers must", () => {
-    // A header-only frame: version 1, timestamp 2, all four counts zero.
+    // A header-only frame: version 2, timestamp 2, four zero counts, aspect 1.
     // 1.0f = 0x3F800000 and 2.0f = 0x40000000, little-endian byte order.
     const packed = encodeHolisticBase64({
       t: 2,
@@ -162,11 +162,29 @@ describe("base64 transport", () => {
     });
 
     expect(Array.from(new Uint8Array(base64ToArrayBuffer(packed)))).toEqual([
-      0x00, 0x00, 0x80, 0x3f, // version 1
+      0x00, 0x00, 0x00, 0x40, // version 2
       0x00, 0x00, 0x00, 0x40, // t 2
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // four zero counts
+      0x00, 0x00, 0x80, 0x3f, // aspect 1, the default for square-space input
     ]);
-    expect(packed).toBe("AACAPwAAAEAAAAAAAAAAAAAAAAAAAAAA");
+    expect(packed).toBe("AAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAACAPw==");
+  });
+
+  it("carries the aspect ratio the frame was normalised against", () => {
+    const frame = decodeHolisticBase64(encodeHolisticBase64({ ...complete(), aspect: 9 / 16 }), {
+      mirrored: false,
+    });
+    expect(frame.aspect).toBeCloseTo(9 / 16, 6);
+  });
+
+  it("rejects a frame whose aspect ratio is missing or nonsensical", () => {
+    // Zero is what a writer that never set the field would leave behind, and
+    // dividing by it downstream would silently produce infinities.
+    expect(() =>
+      decodeHolisticBase64(encodeHolisticBase64({ ...complete(), aspect: 0 }), {
+        mirrored: false,
+      }),
+    ).toThrow(HolisticBufferError);
   });
 
   it("pads base64 the way the native encoders do", () => {

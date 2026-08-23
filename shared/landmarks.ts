@@ -15,6 +15,16 @@ export type LandmarkFrame = {
   rightHand: Landmark[] | null;
   face: Landmark[] | null;
   pose: Landmark[] | null;
+  /**
+   * Width divided by height of the frame these coordinates were normalised
+   * against, after any rotation.
+   *
+   * Needed because x is normalised by frame width and y by frame height, so on
+   * a 9:16 frame a unit of x is 0.56 of a unit of y and the two cannot be
+   * compared or divided without it. Absent means 1 - square, or already
+   * isotropic, which is what the fixture extractors produce.
+   */
+  aspect?: number;
 };
 
 export type LandmarkSequenceSummary = {

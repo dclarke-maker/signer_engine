@@ -39,6 +39,8 @@ import {
  *   [3] pose count        (0 or 33)
  *   [4] left hand count   (0 or 21)
  *   [5] right hand count  (0 or 21)
+ *   [6] frame aspect, width / height, after rotation. x is normalised by width
+ *       and y by height, so nothing may compare or divide the two without it.
  *   then face, pose, left hand, right hand in order,
  *   four floats per landmark: x, y, z, visibility
  *
@@ -46,8 +48,13 @@ import {
  * unexpected count is rejected rather than truncated - the §5 rules index
  * landmarks by position, so a short array would read the wrong anatomy.
  */
-export const HOLISTIC_BUFFER_VERSION = 1;
-export const HOLISTIC_HEADER_FLOATS = 6;
+/**
+ * Bumped to 2 when the aspect ratio joined the header. The decoder rejects any
+ * other version outright, which is what stops a native writer built against the
+ * old layout from being read as the new one.
+ */
+export const HOLISTIC_BUFFER_VERSION = 2;
+export const HOLISTIC_HEADER_FLOATS = 7;
 const FLOATS_PER_LANDMARK = 4;
 
 type StreamSpec = { key: "face" | "pose" | "leftHand" | "rightHand"; expected: number };
@@ -187,6 +194,10 @@ export function decodeHolisticBuffer(
 
   const t = data[1];
   const counts = [data[2], data[3], data[4], data[5]];
+  const aspect = data[6];
+  if (!(aspect > 0)) {
+    throw new HolisticBufferError(`Frame reported a non-positive aspect ratio of ${aspect}.`);
+  }
 
   let offset = HOLISTIC_HEADER_FLOATS;
   const streams: Record<string, Landmark[] | null> = {};
@@ -198,6 +209,7 @@ export function decodeHolisticBuffer(
 
   return {
     t,
+    aspect,
     face: streams.face,
     pose: streams.pose,
     leftHand: options.mirrored ? streams.rightHand : streams.leftHand,
@@ -233,6 +245,8 @@ export function encodeHolisticBuffer(input: {
   pose: Landmark[] | null;
   leftHand: Landmark[] | null;
   rightHand: Landmark[] | null;
+  /** Defaults to 1 so square-space fixtures need not state it. */
+  aspect?: number;
 }): ArrayBuffer {
   const ordered = STREAMS.map((spec) => input[spec.key]);
   const total =
@@ -245,6 +259,7 @@ export function encodeHolisticBuffer(input: {
   ordered.forEach((stream, i) => {
     data[2 + i] = stream?.length ?? 0;
   });
+  data[6] = input.aspect ?? 1;
 
   let offset = HOLISTIC_HEADER_FLOATS;
   for (const stream of ordered) {

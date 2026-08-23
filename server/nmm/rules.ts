@@ -16,6 +16,7 @@ import {
   midpoint,
   type SignerBaseline,
 } from "./baseline";
+import { toIsotropicSequence } from "./isotropic";
 import { BASELINE_RULE_VERSION, getThresholdProfile, type ThresholdProfile } from "./thresholds";
 
 export type NmmDetection = {
@@ -156,9 +157,13 @@ export function confidenceFor(peakSignal: number): number {
  * runs into detections. Pure: no I/O, no device, no model.
  */
 export function detectNmms(
-  frames: LandmarkFrame[],
+  rawFrames: LandmarkFrame[],
   options: { baseline: SignerBaseline; ruleVersion?: string },
 ): NmmDetection[] {
+  // Every rule below compares vertical measures against shoulder width, which
+  // only means anything once x and y are on the same scale. Frame indices are
+  // preserved, so the detections still point at the caller's frames.
+  const frames = toIsotropicSequence(rawFrames);
   const profile = getThresholdProfile(options.ruleVersion);
   const ctx: RuleContext = { baseline: options.baseline, profile };
   const detections: NmmDetection[] = [];

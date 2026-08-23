@@ -14,6 +14,7 @@ import VisionCamera
  *   [1]     timestamp ms, from this plugin's first frame. The plugin is
  *           reused across captures, so the JS extractor rebases it.
  *   [2..5]  face / pose / leftHand / rightHand counts, 0 when undetected
+ *   [6]     frame aspect, width / height, measured after rotation
  *   then    each stream in that order, four floats per landmark: x, y, z, visibility
  *
  * A packed buffer is used rather than a dictionary because a holistic result is
@@ -32,8 +33,8 @@ import VisionCamera
  */
 @objc(HolisticFrameProcessorPlugin)
 public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
-  private static let schemaVersion: Float = 1
-  private static let headerFloats = 6
+  private static let schemaVersion: Float = 2
+  private static let headerFloats = 7
   private static let floatsPerLandmark = 4
 
   private let landmarker: HolisticLandmarker?
@@ -126,12 +127,18 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
     let totalFloats = Self.headerFloats
       + streams.reduce(0) { $0 + $1.count } * Self.floatsPerLandmark
 
+    // Taken from the MPImage rather than the sample buffer: passing the
+    // orientation above means MediaPipe normalises against the upright frame,
+    // whose width and height are swapped for a sideways-mounted sensor.
+    let uprightAspect = image.height == 0 ? 1 : Float(image.width) / Float(image.height)
+
     var packed = [Float](repeating: 0, count: totalFloats)
     packed[0] = Self.schemaVersion
     packed[1] = Float(timestampMs)
     for (i, stream) in streams.enumerated() {
       packed[2 + i] = Float(stream.count)
     }
+    packed[6] = uprightAspect
 
     var offset = Self.headerFloats
     for stream in streams {
