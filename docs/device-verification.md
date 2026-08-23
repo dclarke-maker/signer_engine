@@ -98,6 +98,25 @@ Coverage near 100% for face and body, and above ~50% for each hand, means the
 signer stayed in frame. Persistently low hand coverage usually means framing,
 not a bug — but zero coverage on a stream that should be present is a bug.
 
+**Read the pattern, not just the numbers.** Coverage counts only whether
+landmarks came back, not whether they are right, so a high bar is weaker
+evidence than it looks. In particular, **body near 100% with face and hands at
+zero means the frame reached MediaPipe the wrong way up**: it finds a pose
+first and crops the face and hand regions out of it, so a sideways frame
+produces a pose of some kind and then nothing else. That is a bug in the
+plugin's rotation handling, not a framing problem, and no amount of
+repositioning will fix it.
+
+The per-frame log is the faster check:
+
+```
+adb logcat -s HolisticPlugin | grep frame
+```
+
+Each line carries the frame size, the rotation applied, the aspect ratio, and
+the four landmark counts. Counts of `face=0 pose=33` on a well-framed signer
+say the same thing as the coverage bars, sooner.
+
 ## 4. Frame rate
 
 The **fps** figure on Capture Review is the number that matters most, and the one
