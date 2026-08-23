@@ -96,6 +96,9 @@ export function LandmarkCamera({ extractor, active, style }: LandmarkCameraProps
       device={device}
       isActive={active}
       frameProcessor={frameProcessor}
+      // RGBA output, so the native plugin can copy a frame straight into a
+      // bitmap. The YUV default would need a colour conversion per frame.
+      pixelFormat="rgb"
       // The pipeline has no audio channel and never records.
       audio={false}
       video={false}

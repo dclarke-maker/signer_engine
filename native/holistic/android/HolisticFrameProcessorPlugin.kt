@@ -1,5 +1,6 @@
 package com.app.signlanguagemobile.holistic
 
+import android.graphics.Bitmap
 import android.util.Log
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -7,6 +8,7 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.holisticlandmarker.HolisticLandmarker
 import com.google.mediapipe.tasks.vision.holisticlandmarker.HolisticLandmarkerResult
+import android.media.Image
 import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
 import com.mrousavy.camera.frameprocessors.SharedArray
@@ -42,6 +44,7 @@ class HolisticFrameProcessorPlugin(
     const val HEADER_FLOATS = 6
     const val FLOATS_PER_LANDMARK = 4
     const val MODEL_ASSET = "holistic_landmarker.task"
+    const val BYTES_PER_PIXEL = 4
   }
 
   private val landmarker: HolisticLandmarker? = try {
@@ -67,8 +70,14 @@ class HolisticFrameProcessorPlugin(
     val timestampMs = (arguments?.get("timestampMs") as? Number)?.toLong() ?: 0L
 
     val result: HolisticLandmarkerResult = try {
-      val image = BitmapImageBuilder(frame.imageProxy.toBitmap()).build()
-      detector.detectForVideo(image, timestampMs)
+      // frame.imageProxy is a CameraX type this module does not have on its
+      // compile classpath, and ImageProxy.toBitmap() is not available in every
+      // CameraX version. frame.image is android.media.Image - a framework class
+      // - so it needs no extra dependency. The camera is configured for RGBA
+      // output (pixelFormat="rgb" in LandmarkCamera), so plane 0 can be copied
+      // straight into a bitmap without a YUV conversion.
+      val bitmap = frame.image.toArgbBitmap() ?: return null
+      detector.detectForVideo(BitmapImageBuilder(bitmap).build(), timestampMs)
     } catch (e: Throwable) {
       Log.w(TAG, "holistic detection failed for one frame", e)
       return null
@@ -104,5 +113,37 @@ class HolisticFrameProcessorPlugin(
     }
 
     return shared
+  }
+
+  /**
+   * Copies an RGBA frame into an ARGB_8888 bitmap.
+   *
+   * Rows can be padded, so a plane whose stride exceeds width * 4 is copied row
+   * by row rather than in one block - copying the padding straight through
+   * would shear the image and produce landmarks that are subtly wrong rather
+   * than obviously broken.
+   */
+  private fun Image.toArgbBitmap(): Bitmap? {
+    val plane = planes.firstOrNull() ?: return null
+    val buffer = plane.buffer.also { it.rewind() }
+    val rowStride = plane.rowStride
+    val tightStride = width * BYTES_PER_PIXEL
+
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    if (rowStride == tightStride) {
+      bitmap.copyPixelsFromBuffer(buffer)
+      return bitmap
+    }
+
+    val packed = ByteBuffer.allocateDirect(tightStride * height).order(ByteOrder.nativeOrder())
+    val row = ByteArray(tightStride)
+    for (y in 0 until height) {
+      buffer.position(y * rowStride)
+      buffer.get(row, 0, tightStride)
+      packed.put(row)
+    }
+    packed.rewind()
+    bitmap.copyPixelsFromBuffer(packed)
+    return bitmap
   }
 }
