@@ -27,6 +27,9 @@ export default function CaptureScreen() {
   // `message`, which reports a failure of one attempt; this one is permanent
   // for the session and must block recording rather than just report.
   const [blocked, setBlocked] = useState<string | null>(null);
+  // A camera takes a moment to open. Recording before it does captures a signer
+  // who cannot see themselves, and this screen asks them to stay in frame.
+  const [previewLive, setPreviewLive] = useState(false);
 
   const framesRef = useRef<LandmarkFrame[]>([]);
   const extractorRef = useRef(getExtractor());
@@ -40,9 +43,10 @@ export default function CaptureScreen() {
 
   // Stable so LandmarkCamera's effect does not re-fire every render.
   const handleUnavailable = useCallback((reason: string) => setBlocked(reason), []);
+  const handlePreviewState = useCallback((streaming: boolean) => setPreviewLive(streaming), []);
 
   const begin = async () => {
-    if (blocked) return;
+    if (blocked || !previewLive) return;
     setMessage(null);
     framesRef.current = [];
     setFrameCount(0);
@@ -125,6 +129,7 @@ export default function CaptureScreen() {
         extractor={extractorRef.current}
         active={isCapturing}
         onUnavailable={handleUnavailable}
+        onPreviewStateChange={handlePreviewState}
       />
       <ScreenContainer
         edges={["top", "bottom", "left", "right"]}
@@ -165,20 +170,28 @@ export default function CaptureScreen() {
                 ? blocked
                 : isCapturing
                   ? `${frameCount} motion frames read. Tap stop when you finish.`
-                  : "Sign at your natural pace. Nothing is recorded — only motion points."}
+                  : previewLive
+                    ? "Sign at your natural pace. Nothing is recorded — only motion points."
+                    : "Waiting for the camera. You will see yourself before you begin."}
             </Text>
             <Pressable
-              disabled={!!blocked}
+              disabled={!!blocked || (!isCapturing && !previewLive)}
               onPress={isCapturing ? finish : begin}
               style={({ pressed }) => [
                 isCapturing ? styles.stopButton : styles.recordButton,
-                !!blocked && styles.disabled,
+                (!!blocked || (!isCapturing && !previewLive)) && styles.disabled,
                 pressed && styles.pressed,
               ]}
             >
               <View style={isCapturing ? styles.stopSymbol : styles.recordSymbol} />
               <Text style={styles.recordButtonText}>
-                {blocked ? "Camera unavailable" : isCapturing ? "Stop and review" : "Start signing"}
+                {blocked
+                  ? "Camera unavailable"
+                  : isCapturing
+                    ? "Stop and review"
+                    : previewLive
+                      ? "Start signing"
+                      : "Starting camera…"}
               </Text>
             </Pressable>
             {message ? <Text style={styles.errorText}>{message}</Text> : null}

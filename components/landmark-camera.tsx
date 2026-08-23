@@ -35,6 +35,12 @@ export type LandmarkCameraProps = {
    * produce an empty sequence.
    */
   onUnavailable?: (reason: string) => void;
+  /**
+   * Called with true once the camera is actually producing a picture, and false
+   * when it stops. A camera takes a second or two to open, and a capture begun
+   * before then records a signer who cannot yet see themselves.
+   */
+  onPreviewStateChange?: (streaming: boolean) => void;
 };
 
 /**
@@ -88,7 +94,13 @@ function useCameraShouldStream(): boolean {
   return isFocused && inForeground;
 }
 
-export function LandmarkCamera({ extractor, active, style, onUnavailable }: LandmarkCameraProps) {
+export function LandmarkCamera({
+  extractor,
+  active,
+  style,
+  onUnavailable,
+  onPreviewStateChange,
+}: LandmarkCameraProps) {
   const device = useSigningDevice();
   const pushed = needsPushedFrames(extractor);
   const streaming = useCameraShouldStream();
@@ -163,7 +175,16 @@ export function LandmarkCamera({ extractor, active, style, onUnavailable }: Land
   }
 
   if (!canPush) {
-    return <CameraView style={style ?? StyleSheet.absoluteFill} facing="front" />;
+    // A pull extractor produces frames without a camera, so there is nothing to
+    // wait for; reporting ready keeps screens from blocking on a signal that
+    // will never arrive.
+    return (
+      <CameraView
+        style={style ?? StyleSheet.absoluteFill}
+        facing="front"
+        onCameraReady={() => onPreviewStateChange?.(true)}
+      />
+    );
   }
 
   return (
@@ -175,6 +196,8 @@ export function LandmarkCamera({ extractor, active, style, onUnavailable }: Land
       // RGBA output, so the native plugin can copy a frame straight into a
       // bitmap. The YUV default would need a colour conversion per frame.
       pixelFormat="rgb"
+      onPreviewStarted={() => onPreviewStateChange?.(true)}
+      onPreviewStopped={() => onPreviewStateChange?.(false)}
       // The pipeline has no audio channel and never records.
       audio={false}
       video={false}
