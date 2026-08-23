@@ -82,6 +82,36 @@ The one exception is the **workshop calibration buffer**, which lets the NDFN Li
 
 See `design.md` §3 for the full data flow and the four security guarantees.
 
+## Deployed server
+
+The research backend runs on the Hetzner box `nsl-prod` (5.223.90.108, Singapore), from `/opt/signbridge`:
+
+| | |
+| --- | --- |
+| API | `https://5-223-90-108.sslip.io` |
+| Compose file | `docker-compose.server.yml` |
+| Secrets | `/opt/signbridge/.env.production`, generated on the server, mode 600 |
+
+`sslip.io` resolves any dashed-IP hostname to that address, which gives Caddy a real name to obtain a Let's Encrypt certificate for without owning a domain. **TLS is not optional here**: Android blocks cleartext HTTP, so the mobile client cannot reach a plain `http://` API.
+
+Only Caddy is published. The database, object store, and mail container have no host ports and are reachable solely through the API or an SSH tunnel:
+
+```bash
+ssh -L 8025:localhost:8025 nsl-prod   # Mailpit, to read invitation emails
+```
+
+Two deliberate deviations from `docker-compose.hetzner.yml`, both recorded so they are not mistaken for the intended production shape:
+
+- **MinIO runs on the box** rather than a managed Hetzner Object Storage bucket, because none is provisioned. The storage adapter targets either, so switching is an environment change.
+- **Mailpit handles invitations** rather than Gmail SMTP. Fine for testing; replace it before real recruitment, or invitation emails never leave the server.
+
+Deploy an update:
+
+```bash
+rsync -az --delete --exclude node_modules --exclude .git ./ nsl-prod:/opt/signbridge/
+ssh nsl-prod 'cd /opt/signbridge && docker compose -f docker-compose.server.yml --env-file .env.production up -d --build'
+```
+
 ## Exporting the corpus
 
 Phase 3 needs the corpus out of the system for ELAN annotation and ISL pre-training:
