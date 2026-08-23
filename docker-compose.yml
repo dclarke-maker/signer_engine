@@ -20,7 +20,8 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       SMTP_FROM: ${SMTP_FROM:-SignBridge <no-reply@localhost>}
-      SIGNER_INVITE_BASE_URL: ${SIGNER_INVITE_BASE_URL:-signbridge://set-password}
+      # Must match the scheme app.config.ts registers, or the link opens nothing.
+      SIGNER_INVITE_BASE_URL: ${SIGNER_INVITE_BASE_URL:-manussignlanguagemobile://set-password}
       INTERNAL_ADMIN_KEY: ${INTERNAL_ADMIN_KEY:-signbridge-local-admin-key}
       CONSENT_VERSION: ${CONSENT_VERSION:-v1}
       STUDY_SPLIT_SEED: ${STUDY_SPLIT_SEED:-signbridge-study-v1}

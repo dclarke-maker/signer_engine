@@ -12,9 +12,17 @@ extra tooling.
 
 - An Android device that is **not** HarmonyOS NEXT (no Android runtime at all).
 - The development build installed from EAS.
-- A signer account: invite one through `internalAdmin.inviteSigner`, then read
-  the email from Mailpit over an SSH tunnel — `ssh -L 8025:localhost:8025 nsl-prod`,
-  then open `http://localhost:8025`.
+- A signer account. One already exists on the deployed server for this purpose:
+
+  | | |
+  | --- | --- |
+  | Email | `tester@nsl.local` |
+  | Password | `device-test-passphrase-2026` |
+
+  It is a test account on a test deployment, not a participant account — delete
+  it before real recruitment. To create others, call `internalAdmin.inviteSigner`
+  and read the email from Mailpit over an SSH tunnel:
+  `ssh -L 8025:localhost:8025 nsl-prod`, then `http://localhost:8025`.
 
 ## 1. The native module loaded
 
