@@ -57,6 +57,12 @@ export function createHolisticWebExtractor(options: HolisticWebOptions): Landmar
       const result = landmarker.detectForVideo(video, now);
       const frame = holisticToFrame(result, Math.round(now - startedAt), {
         mirrored: options.mirrored ?? true,
+        // Read per frame: a <video> reports 0 until metadata has loaded, and
+        // claiming a square frame would quietly skew every marker downstream.
+        aspect:
+          video.videoWidth > 0 && video.videoHeight > 0
+            ? video.videoWidth / video.videoHeight
+            : undefined,
       });
 
       frameCount += 1;

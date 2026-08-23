@@ -40,22 +40,28 @@ function firstOf(
 }
 
 /**
- * MediaPipe labels hands from the *camera's* point of view. With a front-facing
- * camera the image is mirrored, so the signer's left hand appears on the right
- * of the frame and lands in `rightHandLandmarks`. `mirrored` swaps them back so
- * "leftHand" always means the signer's own left hand — which is what a
+ * MediaPipe names hands anatomically, but for the person *as depicted in the
+ * image it was given*. A mirrored frame depicts a mirrored person, so the
+ * labels come back swapped relative to the real signer, and `mirrored` swaps
+ * them back — "leftHand" then means the signer's own left hand, which is what a
  * linguistic annotation has to mean.
+ *
+ * `aspect` is width over height of the frame the coordinates were normalised
+ * against. The non-manual marker rules divide vertical measures by shoulder
+ * width and cannot do so correctly without it; omitting it claims a square
+ * frame. See server/nmm/isotropic.ts.
  */
 export function holisticToFrame(
   result: HolisticResultLike,
   t: number,
-  options: { mirrored: boolean },
+  options: { mirrored: boolean; aspect?: number },
 ): LandmarkFrame {
   const fromCameraLeft = firstOf(result.leftHandLandmarks, HAND_LANDMARK_COUNT);
   const fromCameraRight = firstOf(result.rightHandLandmarks, HAND_LANDMARK_COUNT);
 
   return {
     t,
+    aspect: options.aspect,
     leftHand: options.mirrored ? fromCameraRight : fromCameraLeft,
     rightHand: options.mirrored ? fromCameraLeft : fromCameraRight,
     face: firstOf(result.faceLandmarks, FACE_LANDMARK_COUNT),
