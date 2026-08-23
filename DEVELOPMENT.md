@@ -162,7 +162,15 @@ npx eas-cli@latest login
 npx eas-cli@latest build --profile development --platform android
 ```
 
-`eas.json` defines four profiles. `development` produces a development client with `expo-dev-client`, which is what the frame processor needs; `preview` is an internal release build; `production` is store-bound.
+`eas.json` defines four profiles. `development` produces a development client: a native shell that loads JavaScript from a Metro dev server at runtime. It embeds **no JS bundle**, so `EXPO_PUBLIC_API_BASE_URL` is resolved when Metro bundles rather than when EAS builds, and the app does nothing without `pnpm dev` running on the same network.
+
+**For testing on a device, build `preview` instead.** It is a release build with the JavaScript bundled in and the API URL baked at build time, so it is self-contained:
+
+```bash
+npx eas-cli@latest build --profile preview --platform android
+```
+
+`production` is store-bound and behaves the same way.
 
 Android development builds need no paid account. **iOS device builds require an Apple Developer membership**, so `ios-simulator` extends `development` with `"simulator": true` — it needs no Apple account and is enough to prove the Swift plugin compiles, which an Android build never exercises:
 
