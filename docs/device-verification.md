@@ -11,7 +11,13 @@ extra tooling.
 ## Before you start
 
 - An Android device that is **not** HarmonyOS NEXT (no Android runtime at all).
-- The development build installed from EAS.
+- The **preview** APK, not the development one. A development build embeds no
+  JavaScript and needs a Metro server on the same network; preview is
+  self-contained with the API URL compiled in.
+
+  Latest: `https://expo.dev/artifacts/eas/SjXYN4_T5tKmAltmPATIyf9Rexlwz-zAT5lSfzyDWDc.apk`
+
+  Rebuild with `npx eas-cli@latest build --profile preview --platform android`.
 - A signer account. One already exists on the deployed server for this purpose:
 
   | | |
@@ -23,6 +29,19 @@ extra tooling.
   it before real recruitment. To create others, call `internalAdmin.inviteSigner`
   and read the email from Mailpit over an SSH tunnel:
   `ssh -L 8025:localhost:8025 nsl-prod`, then `http://localhost:8025`.
+
+## 0. Running without a phone
+
+An Android emulator can pass the host webcam through to the virtual camera,
+which is enough to exercise extraction end to end. Install Android Studio,
+create a Pixel with an **arm64** system image, then in the device's Advanced
+Settings set the front camera to **Webcam0** — without that it renders a
+synthetic scene with no hands in it, and MediaPipe will correctly find nothing.
+
+The APK ships `arm64-v8a`, so it runs natively on an Apple Silicon Mac.
+
+Frame rate from an emulator says nothing useful: a development machine will beat
+any phone a participant owns. Everything else on this list is still meaningful.
 
 ## 1. The native module loaded
 
