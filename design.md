@@ -134,10 +134,12 @@ Nothing else on npm supplies MediaPipe hand landmarks to React Native. Any nativ
 
 One `HolisticLandmarker` call yields all four. Sizes are validated on ingest: a stream of the wrong length is recorded as absent rather than passed through, because the §5 rules index landmarks by position and a short array would silently read the wrong anatomy.
 
+MediaPipe Tasks appends ten iris landmarks — five per eye, at indices 468 to 477 — so a detected face arrives as **478** points. Both 468 and 478 are accepted. The extra points are appended rather than interleaved, so every face index in §5.2 refers to the same landmark either way. Accepting only 468 is not a conservative choice: it discards every frame in which a face was found, leaving a capture that reports a small frame count and no fault.
+
 | Stream | Points | Source field |
 | --- | --- | --- |
 | Hand | 21 per hand (42 total) | `leftHandLandmarks` / `rightHandLandmarks` |
-| Face | 468 | `faceLandmarks` |
+| Face | 468, or 478 with iris | `faceLandmarks` |
 | Pose | 33 | `poseLandmarks` |
 
 MediaPipe names hands anatomically, but for the person *as depicted in the frame it is given*. A mirrored frame depicts a mirrored person, so the labels come back swapped relative to the real signer, and the decoder swaps them back — "left hand" then always means the signer's own left hand, which is what a linguistic annotation must mean.

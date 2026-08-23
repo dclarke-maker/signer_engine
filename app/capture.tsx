@@ -81,6 +81,7 @@ export default function CaptureScreen() {
           frameCount: String(summary.frameCount),
           durationMs: String(summary.durationMs),
           achievedFps: String(Math.round(summary.achievedFps)),
+          decodeFailures: String(summary.decodeFailures),
         },
       } as never);
     } catch {

@@ -10,6 +10,7 @@ const summary = async () => ({
   durationMs: 0,
   achievedFps: 0,
   coverage: { leftHand: 0, rightHand: 0, face: 0, pose: 0 },
+  decodeFailures: 0,
 });
 
 /**

@@ -113,6 +113,7 @@ export function createMediaPipeNativeExtractor() {
           face: ratio(detected.face),
           pose: ratio(detected.pose),
         },
+        decodeFailures,
       };
     },
   };

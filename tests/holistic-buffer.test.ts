@@ -13,6 +13,7 @@ import {
 } from "../lib/extractors/holistic-buffer";
 import {
   FACE_LANDMARK_COUNT,
+  FACE_LANDMARK_COUNT_WITH_IRIS,
   HAND_LANDMARK_COUNT,
   POSE_LANDMARK_COUNT,
   type Landmark,
@@ -206,6 +207,52 @@ describe("base64 transport", () => {
     // Five bytes: enough to decode, but not a float32 boundary.
     expect(() =>
       decodeHolisticBase64(arrayBufferToBase64(new Uint8Array(5).buffer)),
+    ).toThrow(HolisticBufferError);
+  });
+});
+
+describe("face landmark counts", () => {
+  // MediaPipe Tasks appends ten iris landmarks to the 468-point mesh, so a
+  // detected face arrives as 478. Requiring exactly 468 rejected every frame
+  // that contained a face - which is every frame worth keeping - and the
+  // capture reported only the handful in which no face was found.
+  it("accepts a face with the iris landmarks attached", () => {
+    const frame = decodeHolisticBase64(
+      encodeHolisticBase64({
+        ...complete(),
+        face: pts(FACE_LANDMARK_COUNT_WITH_IRIS, 9),
+      }),
+    );
+
+    expect(frame.face).toHaveLength(FACE_LANDMARK_COUNT_WITH_IRIS);
+  });
+
+  it("accepts a face without them", () => {
+    const frame = decodeHolisticBase64(
+      encodeHolisticBase64({ ...complete(), face: pts(FACE_LANDMARK_COUNT, 9) }),
+    );
+
+    expect(frame.face).toHaveLength(FACE_LANDMARK_COUNT);
+  });
+
+  it("keeps the mesh indices the rules read in the same place", () => {
+    // The extra points are appended, not interleaved, so every index the NMM
+    // rules use must land on the same landmark in both layouts.
+    const mesh = decodeHolisticBase64(
+      encodeHolisticBase64({ ...complete(), face: pts(FACE_LANDMARK_COUNT, 9) }),
+    );
+    const withIris = decodeHolisticBase64(
+      encodeHolisticBase64({ ...complete(), face: pts(FACE_LANDMARK_COUNT_WITH_IRIS, 9) }),
+    );
+
+    for (const index of [0, 7, 8, 33, 133, 105, 334]) {
+      expect(withIris.face![index]).toEqual(mesh.face![index]);
+    }
+  });
+
+  it("still rejects a face of any other size", () => {
+    expect(() =>
+      decodeHolisticBase64(encodeHolisticBase64({ ...complete(), face: pts(400, 9) })),
     ).toThrow(HolisticBufferError);
   });
 });

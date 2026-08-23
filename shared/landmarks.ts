@@ -2,6 +2,19 @@ export const HAND_LANDMARK_COUNT = 21;
 export const FACE_LANDMARK_COUNT = 468;
 export const POSE_LANDMARK_COUNT = 33;
 
+/**
+ * MediaPipe Tasks appends ten iris landmarks - five per eye, at indices 468 to
+ * 477 - to the 468-point face mesh, so a detected face arrives as 478 points.
+ * The proposal and design.md both say 468, which is the mesh the non-manual
+ * marker rules index into; every face index they use is below 468, so the extra
+ * points are additional data rather than a different layout.
+ *
+ * Both counts are accepted. Rejecting 478 is not a safe default: it discards
+ * every frame in which a face was found, which is every frame that matters.
+ */
+export const FACE_LANDMARK_COUNT_WITH_IRIS = 478;
+export const FACE_LANDMARK_COUNTS = [FACE_LANDMARK_COUNT, FACE_LANDMARK_COUNT_WITH_IRIS];
+
 export type Landmark = { x: number; y: number; z: number; visibility?: number };
 
 /**
@@ -33,6 +46,12 @@ export type LandmarkSequenceSummary = {
   achievedFps: number;
   /** Fraction of frames in which each stream was detected, 0-1. */
   coverage: { leftHand: number; rightHand: number; face: number; pose: number };
+  /**
+   * Frames the native plugin produced that could not be read. Non-zero means
+   * the plugin and this client disagree about the packed layout, and the
+   * capture is missing data rather than merely short.
+   */
+  decodeFailures: number;
 };
 
 export type LandmarkSequencePayload = {

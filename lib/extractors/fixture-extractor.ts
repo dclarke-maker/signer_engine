@@ -54,5 +54,8 @@ function summarize(frames: LandmarkFrame[]): LandmarkSequenceSummary {
       face: ratio((f) => f.face !== null),
       pose: ratio((f) => f.pose !== null),
     },
+    // A fixture replays frames that are already decoded; there is nothing to
+    // fail at.
+    decodeFailures: 0,
   };
 }

@@ -1,5 +1,5 @@
 import {
-  FACE_LANDMARK_COUNT,
+  FACE_LANDMARK_COUNTS,
   HAND_LANDMARK_COUNT,
   POSE_LANDMARK_COUNT,
   type Landmark,
@@ -27,10 +27,11 @@ export type HolisticResultLike = {
  */
 function firstOf(
   groups: { x: number; y: number; z: number; visibility?: number }[][] | undefined,
-  expected: number,
+  expected: number | number[],
 ): Landmark[] | null {
+  const allowed = Array.isArray(expected) ? expected : [expected];
   const first = groups?.[0];
-  if (!first || first.length !== expected) return null;
+  if (!first || !allowed.includes(first.length)) return null;
   return first.map((p) => ({
     x: p.x,
     y: p.y,
@@ -64,7 +65,7 @@ export function holisticToFrame(
     aspect: options.aspect,
     leftHand: options.mirrored ? fromCameraRight : fromCameraLeft,
     rightHand: options.mirrored ? fromCameraLeft : fromCameraRight,
-    face: firstOf(result.faceLandmarks, FACE_LANDMARK_COUNT),
+    face: firstOf(result.faceLandmarks, FACE_LANDMARK_COUNTS),
     pose: firstOf(result.poseLandmarks, POSE_LANDMARK_COUNT),
   };
 }

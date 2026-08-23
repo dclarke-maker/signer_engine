@@ -116,16 +116,21 @@ export function createHolisticWebExtractor(options: HolisticWebOptions): Landmar
       landmarker = null;
 
       const ratio = (n: number) => (frameCount === 0 ? 0 : n / frameCount);
+      // n frames span n-1 intervals; dividing by the count overstates the rate.
+      const intervals = frameCount > 1 ? frameCount - 1 : 0;
       return {
         frameCount,
         durationMs: lastT,
-        achievedFps: lastT === 0 ? 0 : (frameCount / lastT) * 1000,
+        achievedFps: intervals === 0 || lastT === 0 ? 0 : (intervals / lastT) * 1000,
         coverage: {
           leftHand: ratio(detected.leftHand),
           rightHand: ratio(detected.rightHand),
           face: ratio(detected.face),
           pose: ratio(detected.pose),
         },
+        // This path reads MediaPipe's own result objects rather than a packed
+        // buffer, so there is no layout to disagree about.
+        decodeFailures: 0,
       };
     },
   };

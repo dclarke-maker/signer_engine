@@ -90,9 +90,14 @@ partial array through:
 
 | Stream | Expected |
 | --- | --- |
-| Face | 468 |
+| Face | 478, or 468 |
 | Pose | 33 |
 | Left / right hand | 21 each |
+
+MediaPipe Tasks appends ten iris landmarks to the 468-point mesh, so a detected
+face normally arrives as **478**. Both counts are accepted. The proposal and
+design.md say 468 because that is the mesh the marker rules index into, and
+every face index they use is below 468.
 
 Coverage near 100% for face and body, and above ~50% for each hand, means the
 signer stayed in frame. Persistently low hand coverage usually means framing,
@@ -139,10 +144,13 @@ fieldwork rather than during it.
 writers must match. If the two disagree, the decoder throws and the frame is
 dropped and counted rather than surfacing an error.
 
-So: a capture that reports **far fewer frames than the elapsed time implies** is
-the symptom of a format mismatch, not slowness. Compare `frameCount` against
-`duration × fps`. A large shortfall means the native writer and the decoder
-disagree about the layout.
+Capture Review reports this directly: a capture that discarded frames shows a
+**"n% of frames could not be read"** panel with the count. Anything above zero
+means the plugin and the JavaScript decoder disagree about the layout, and the
+sample is incomplete rather than merely short — recording again will not help.
+
+The older symptom still holds as a cross-check: compare `frameCount` against
+`duration × fps`. A large shortfall means the same thing.
 
 The packed bytes cross the worklet boundary as a **base64 string**, not an
 ArrayBuffer. This is not a stylistic choice: `Worklets.createRunOnJS` converts

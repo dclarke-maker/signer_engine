@@ -42,6 +42,7 @@ export default function CaptureReviewScreen() {
     frameCount?: string;
     durationMs?: string;
     achievedFps?: string;
+    decodeFailures?: string;
   }>();
 
   const utils = trpc.useUtils();
@@ -58,6 +59,13 @@ export default function CaptureReviewScreen() {
   const durationMs = Number(params.durationMs ?? 0);
   const achievedFps = Number(params.achievedFps ?? 0);
   const frameCount = frames.length || Number(params.frameCount ?? 0);
+  const decodeFailures = Number(params.decodeFailures ?? 0);
+  // Frames the device produced but could not read. A capture can look merely
+  // short when in fact most of it was discarded, which is a fault in the build
+  // rather than in how the signer stood, so it is reported separately from
+  // coverage instead of being folded into it.
+  const discardedShare =
+    frameCount + decodeFailures === 0 ? 0 : decodeFailures / (frameCount + decodeFailures);
 
   const coverage = useMemo(
     () =>
@@ -153,6 +161,20 @@ export default function CaptureReviewScreen() {
             </Text>
           </View>
 
+          {decodeFailures > 0 ? (
+            <View style={styles.warningCard}>
+              <Text style={styles.warningTitle}>
+                {Math.round(discardedShare * 100)}% of frames could not be read
+              </Text>
+              <Text style={styles.warningBody}>
+                {decodeFailures} of {frameCount + decodeFailures} frames were discarded because this
+                app could not interpret what the camera module produced. This is a fault in the
+                build, not in how you signed. Report it rather than recording again — a sample
+                collected this way is incomplete.
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={styles.privacy}>
             No video exists on this device. Submitting sends only these motion points, the sentence,
             and its category.
@@ -234,6 +256,16 @@ const styles = StyleSheet.create({
   coveragePercent: { color: "#334E68", fontSize: 13, fontWeight: "700", width: 42, textAlign: "right" },
   coverageHint: { color: "#627D98", fontSize: 13, lineHeight: 19, marginTop: 2 },
   privacy: { color: "#627D98", fontSize: 13, lineHeight: 19 },
+  warningCard: {
+    backgroundColor: "#FFF7ED",
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    gap: 8,
+  },
+  warningTitle: { color: "#B45309", fontSize: 16, fontWeight: "700" },
+  warningBody: { color: "#7C2D12", fontSize: 14, lineHeight: 21 },
   actions: {
     padding: 20,
     paddingTop: 12,

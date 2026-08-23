@@ -1,5 +1,5 @@
 import {
-  FACE_LANDMARK_COUNT,
+  FACE_LANDMARK_COUNTS,
   HAND_LANDMARK_COUNT,
   POSE_LANDMARK_COUNT,
   type Landmark,
@@ -49,7 +49,8 @@ import {
  *
  * A count of 0 means the stream was not detected in that frame. Any other
  * unexpected count is rejected rather than truncated - the §5 rules index
- * landmarks by position, so a short array would read the wrong anatomy.
+ * landmarks by position, so a short array would read the wrong anatomy. Face
+ * accepts 468 or 478; see FACE_LANDMARK_COUNTS.
  */
 /**
  * Bumped to 2 when the aspect ratio joined the header. The decoder rejects any
@@ -60,14 +61,14 @@ export const HOLISTIC_BUFFER_VERSION = 2;
 export const HOLISTIC_HEADER_FLOATS = 8;
 const FLOATS_PER_LANDMARK = 4;
 
-type StreamSpec = { key: "face" | "pose" | "leftHand" | "rightHand"; expected: number };
+type StreamSpec = { key: "face" | "pose" | "leftHand" | "rightHand"; expected: number[] };
 
 /** Order is part of the wire format and must match the native writer. */
 const STREAMS: StreamSpec[] = [
-  { key: "face", expected: FACE_LANDMARK_COUNT },
-  { key: "pose", expected: POSE_LANDMARK_COUNT },
-  { key: "leftHand", expected: HAND_LANDMARK_COUNT },
-  { key: "rightHand", expected: HAND_LANDMARK_COUNT },
+  { key: "face", expected: FACE_LANDMARK_COUNTS },
+  { key: "pose", expected: [POSE_LANDMARK_COUNT] },
+  { key: "leftHand", expected: [HAND_LANDMARK_COUNT] },
+  { key: "rightHand", expected: [HAND_LANDMARK_COUNT] },
 ];
 
 export class HolisticBufferError extends Error {}
@@ -147,13 +148,13 @@ function readStream(
   data: Float32Array,
   offset: number,
   count: number,
-  expected: number,
+  expected: number[],
   label: string,
 ): { landmarks: Landmark[] | null; next: number } {
   if (count === 0) return { landmarks: null, next: offset };
-  if (count !== expected) {
+  if (!expected.includes(count)) {
     throw new HolisticBufferError(
-      `${label} reported ${count} landmarks, expected ${expected} or 0.`,
+      `${label} reported ${count} landmarks, expected ${expected.join(" or ")} or 0.`,
     );
   }
   const end = offset + count * FLOATS_PER_LANDMARK;
