@@ -29,7 +29,9 @@ const schemeFromBundleId = `manus${timestamp}`;
 const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "SignBridge",
-  appSlug: "sign-language-mobile",
+  // Must match the EAS project slug exactly; EAS rejects a mismatch.
+  // Project: expo.dev/accounts/apu-university/projects/nepal-signer
+  appSlug: "nepal-signer",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "/manus-storage/signbridge-icon_f74a187e.png",
@@ -41,6 +43,9 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
+  // The EAS project belongs to the APU University organisation, not a personal
+  // account, so builds must be attributed to it.
+  owner: "apu-university",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
