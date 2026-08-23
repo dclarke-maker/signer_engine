@@ -41,6 +41,9 @@ import {
  *   [5] right hand count  (0 or 21)
  *   [6] frame aspect, width / height, after rotation. x is normalised by width
  *       and y by height, so nothing may compare or divide the two without it.
+ *   [7] 1 when the frame's pixels are horizontally flipped, else 0. MediaPipe
+ *       names the hands anatomically, so a mirrored frame yields the labels of
+ *       a mirrored person and the two have to be swapped back.
  *   then face, pose, left hand, right hand in order,
  *   four floats per landmark: x, y, z, visibility
  *
@@ -54,7 +57,7 @@ import {
  * old layout from being read as the new one.
  */
 export const HOLISTIC_BUFFER_VERSION = 2;
-export const HOLISTIC_HEADER_FLOATS = 7;
+export const HOLISTIC_HEADER_FLOATS = 8;
 const FLOATS_PER_LANDMARK = 4;
 
 type StreamSpec = { key: "face" | "pose" | "leftHand" | "rightHand"; expected: number };
@@ -172,14 +175,17 @@ function readStream(
 }
 
 /**
- * Decodes one packed frame. `mirrored` swaps the hands: MediaPipe labels them
- * from the camera's point of view, and a front camera mirrors the image, so
- * the signer's left hand arrives labelled right.
+ * Decodes one packed frame.
+ *
+ * Whether the hands are swapped is read from the frame rather than configured.
+ * MediaPipe names hands anatomically, so it is only wrong when the pixels
+ * themselves are flipped - which is a property of the lens and the platform,
+ * not of the app. A front camera on one platform delivers a mirrored analysis
+ * buffer and on another does not, and an external webcam usually does not, so
+ * assuming any single answer mislabels every hand in the corpus on some
+ * hardware. Left and right are not incidental in a sign language.
  */
-export function decodeHolisticBuffer(
-  buffer: ArrayBuffer,
-  options: { mirrored: boolean },
-): LandmarkFrame {
+export function decodeHolisticBuffer(buffer: ArrayBuffer): LandmarkFrame {
   const data = new Float32Array(buffer);
   if (data.length < HOLISTIC_HEADER_FLOATS) {
     throw new HolisticBufferError("Buffer is shorter than the header.");
@@ -198,6 +204,7 @@ export function decodeHolisticBuffer(
   if (!(aspect > 0)) {
     throw new HolisticBufferError(`Frame reported a non-positive aspect ratio of ${aspect}.`);
   }
+  const mirrored = data[7] !== 0;
 
   let offset = HOLISTIC_HEADER_FLOATS;
   const streams: Record<string, Landmark[] | null> = {};
@@ -212,8 +219,8 @@ export function decodeHolisticBuffer(
     aspect,
     face: streams.face,
     pose: streams.pose,
-    leftHand: options.mirrored ? streams.rightHand : streams.leftHand,
-    rightHand: options.mirrored ? streams.leftHand : streams.rightHand,
+    leftHand: mirrored ? streams.rightHand : streams.leftHand,
+    rightHand: mirrored ? streams.leftHand : streams.rightHand,
   };
 }
 
@@ -221,17 +228,14 @@ export function decodeHolisticBuffer(
  * Decodes one packed frame delivered as base64. This is the form the native
  * plugins actually return; see the note on the wire format above.
  */
-export function decodeHolisticBase64(
-  base64: string,
-  options: { mirrored: boolean },
-): LandmarkFrame {
+export function decodeHolisticBase64(base64: string): LandmarkFrame {
   const buffer = base64ToArrayBuffer(base64);
   if (buffer.byteLength % 4 !== 0) {
     throw new HolisticBufferError(
       `Packed frame is ${buffer.byteLength} bytes, which is not a whole number of float32s.`,
     );
   }
-  return decodeHolisticBuffer(buffer, options);
+  return decodeHolisticBuffer(buffer);
 }
 
 /**
@@ -247,6 +251,8 @@ export function encodeHolisticBuffer(input: {
   rightHand: Landmark[] | null;
   /** Defaults to 1 so square-space fixtures need not state it. */
   aspect?: number;
+  /** Defaults to false: an unflipped frame needs no correction. */
+  mirrored?: boolean;
 }): ArrayBuffer {
   const ordered = STREAMS.map((spec) => input[spec.key]);
   const total =
@@ -260,6 +266,7 @@ export function encodeHolisticBuffer(input: {
     data[2 + i] = stream?.length ?? 0;
   });
   data[6] = input.aspect ?? 1;
+  data[7] = input.mirrored ? 1 : 0;
 
   let offset = HOLISTIC_HEADER_FLOATS;
   for (const stream of ordered) {

@@ -30,6 +30,7 @@ import java.nio.ByteOrder
  *           reused across captures, so the JS extractor rebases it.
  *   [2..5]  face / pose / leftHand / rightHand counts, 0 when undetected
  *   [6]     frame aspect, width / height, measured after rotation
+ *   [7]     1 when the frame's pixels are horizontally flipped, else 0
  *   then    each stream in that order, four floats per landmark: x, y, z, visibility
  *
  * A packed buffer is used rather than a map because a holistic result is ~543
@@ -51,7 +52,7 @@ class HolisticFrameProcessorPlugin(
   private companion object {
     const val TAG = "HolisticPlugin"
     const val SCHEMA_VERSION = 2f
-    const val HEADER_FLOATS = 7
+    const val HEADER_FLOATS = 8
     const val FLOATS_PER_LANDMARK = 4
     const val BYTES_PER_FLOAT = 4
     const val MODEL_ASSET = "holistic_landmarker.task"
@@ -182,6 +183,10 @@ class HolisticFrameProcessorPlugin(
     floats.put(1, timestampMs.toFloat())
     streams.forEachIndexed { i, stream -> floats.put(2 + i, stream.size.toFloat()) }
     floats.put(6, uprightAspect)
+    // Read from the frame, not assumed: MediaPipe names hands anatomically, so
+    // the labels are only wrong when the pixels are actually flipped, and
+    // whether a front camera's analysis buffer is flipped is a platform detail.
+    floats.put(7, if (frame.isMirrored) 1f else 0f)
 
     var offset = HEADER_FLOATS
     for (stream in streams) {

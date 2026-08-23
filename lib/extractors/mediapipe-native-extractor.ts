@@ -8,11 +8,6 @@ import type {
 /** Must match the name the Swift and Kotlin plugins register under. */
 export const HOLISTIC_PLUGIN_NAME = "holisticLandmarks";
 
-export type NativeHolisticOptions = {
-  /** Front cameras mirror the image; see decodeHolisticBuffer. */
-  mirrored?: boolean;
-};
-
 /**
  * MediaPipe holistic extraction, fed by a Vision Camera frame processor.
  *
@@ -27,9 +22,7 @@ export type NativeHolisticOptions = {
  *
  * Frames are measured and released. Nothing is retained, encoded, or written.
  */
-export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = {}) {
-  const mirrored = options.mirrored ?? true;
-
+export function createMediaPipeNativeExtractor() {
   let listener: ((frame: LandmarkFrame) => void) | null = null;
   let running = false;
 
@@ -71,7 +64,7 @@ export function createMediaPipeNativeExtractor(options: NativeHolisticOptions = 
 
       let decoded: LandmarkFrame;
       try {
-        decoded = decodeHolisticBase64(packed, { mirrored });
+        decoded = decodeHolisticBase64(packed);
       } catch {
         // A malformed frame is dropped and counted rather than thrown. Throwing
         // would abort a capture mid-session and lose every good frame already

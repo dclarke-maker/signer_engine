@@ -24,7 +24,7 @@ export function getExtractor(): LandmarkExtractor {
   if (!hasFrameProcessors()) return createFixtureExtractor(demoSequence);
   // Throttling now happens on the camera thread in LandmarkCamera, where
   // frames can be dropped before they cross to JS.
-  return createMediaPipeNativeExtractor({ mirrored: true });
+  return createMediaPipeNativeExtractor();
 }
 
 /**

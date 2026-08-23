@@ -15,6 +15,7 @@ import VisionCamera
  *           reused across captures, so the JS extractor rebases it.
  *   [2..5]  face / pose / leftHand / rightHand counts, 0 when undetected
  *   [6]     frame aspect, width / height, measured after rotation
+ *   [7]     1 when the frame's pixels are horizontally flipped, else 0
  *   then    each stream in that order, four floats per landmark: x, y, z, visibility
  *
  * A packed buffer is used rather than a dictionary because a holistic result is
@@ -34,7 +35,7 @@ import VisionCamera
 @objc(HolisticFrameProcessorPlugin)
 public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
   private static let schemaVersion: Float = 2
-  private static let headerFloats = 7
+  private static let headerFloats = 8
   private static let floatsPerLandmark = 4
 
   private let landmarker: HolisticLandmarker?
@@ -139,6 +140,10 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
       packed[2 + i] = Float(stream.count)
     }
     packed[6] = uprightAspect
+    // Read from the frame, not assumed: MediaPipe names hands anatomically, so
+    // the labels are only wrong when the pixels are actually flipped, and
+    // whether a front camera's buffer is flipped is a platform detail.
+    packed[7] = frame.isMirrored ? 1 : 0
 
     var offset = Self.headerFloats
     for stream in streams {
