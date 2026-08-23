@@ -1,6 +1,7 @@
 import Foundation
 import MediaPipeTasksVision
 import QuartzCore
+import UIKit
 import VisionCamera
 
 /**
@@ -97,7 +98,16 @@ public class HolisticFrameProcessorPlugin: FrameProcessorPlugin {
 
     let timestampMs = nextTimestampMs()
 
-    guard let image = try? MPImage(sampleBuffer: frame.buffer),
+    // The frame's orientation is passed rather than left at .up. A device's
+    // sensor is mounted at an angle to the display, so a portrait capture
+    // arrives on its side, and MediaPipe is not rotation invariant: it locates
+    // a pose first and crops the face and hand regions from it, so a sideways
+    // frame yields a pose of some kind and then no face and no hands at all.
+    //
+    // The frame is not un-mirrored. A front camera mirrors the image, which
+    // swaps which hand MediaPipe calls left; decodeHolisticBuffer already
+    // undoes that when reading the buffer.
+    guard let image = try? MPImage(sampleBuffer: frame.buffer, orientation: frame.orientation),
           let result = try? landmarker.detect(
             videoFrame: image,
             timestampInMilliseconds: timestampMs

@@ -1,6 +1,7 @@
 package com.app.signlanguagemobile.holistic
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.util.Log
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -13,6 +14,7 @@ import android.os.SystemClock
 import android.util.Base64
 import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
+import com.mrousavy.camera.core.types.Orientation
 import com.mrousavy.camera.frameprocessors.VisionCameraProxy
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -110,6 +112,13 @@ class HolisticFrameProcessorPlugin(
   private var baseTimestampMs = -1L
   private var lastTimestampMs = -1L
 
+  /**
+   * Frames seen, used only to rate-limit the diagnostic log below. Landmark
+   * counts are the fastest way to tell a framing problem from a broken frame -
+   * a pose but no face means the image reached MediaPipe the wrong way up.
+   */
+  private var framesSeen = 0L
+
   private fun nextTimestampMs(): Long {
     val now = SystemClock.elapsedRealtime()
     if (baseTimestampMs < 0) baseTimestampMs = now
@@ -129,7 +138,7 @@ class HolisticFrameProcessorPlugin(
       // - so it needs no extra dependency. The camera is configured for RGBA
       // output (pixelFormat="rgb" in LandmarkCamera), so plane 0 can be copied
       // straight into a bitmap without a YUV conversion.
-      val bitmap = frame.image.toArgbBitmap() ?: return null
+      val bitmap = frame.image.toArgbBitmap(frame.uprightRotationDegrees()) ?: return null
       detector.detectForVideo(BitmapImageBuilder(bitmap).build(), timestampMs)
     } catch (e: Throwable) {
       Log.w(TAG, "holistic detection failed for one frame", e)
@@ -142,6 +151,17 @@ class HolisticFrameProcessorPlugin(
       result.leftHandLandmarks(),
       result.rightHandLandmarks(),
     )
+
+    framesSeen += 1
+    if (framesSeen == 1L || framesSeen % 30 == 0L) {
+      Log.i(
+        TAG,
+        "frame $framesSeen: ${frame.image.width}x${frame.image.height} " +
+          "rot=${frame.uprightRotationDegrees()} mirrored=${frame.isMirrored} " +
+          "face=${streams[0].size} pose=${streams[1].size} " +
+          "left=${streams[2].size} right=${streams[3].size}",
+      )
+    }
 
     val totalFloats = HEADER_FLOATS + streams.sumOf { it.size } * FLOATS_PER_LANDMARK
     val byteCount = totalFloats * BYTES_PER_FLOAT
@@ -171,14 +191,42 @@ class HolisticFrameProcessorPlugin(
   }
 
   /**
-   * Copies an RGBA frame into an ARGB_8888 bitmap.
+   * How far the sensor image must be turned to stand upright.
+   *
+   * A phone's sensor is mounted at an angle to the display, so a frame captured
+   * while holding the device in portrait arrives on its side. MediaPipe is not
+   * rotation invariant: it locates a pose first and then crops the face and
+   * hand regions from it, so a sideways frame yields a pose of some kind and
+   * then no face and no hands at all - which is what this pipeline produced
+   * before the rotation was applied.
+   *
+   * Frame.orientation is derived from CameraX's rotationDegrees and then
+   * reversed, so reversing it again recovers the original bucket. The raw value
+   * is not read from frame.imageProxy because that is a CameraX type this
+   * module does not have on its compile classpath.
+   */
+  private fun Frame.uprightRotationDegrees(): Int =
+    when (orientation.reversed()) {
+      Orientation.PORTRAIT -> 0
+      Orientation.LANDSCAPE_LEFT -> 90
+      Orientation.PORTRAIT_UPSIDE_DOWN -> 180
+      Orientation.LANDSCAPE_RIGHT -> 270
+    }
+
+  /**
+   * Copies an RGBA frame into an ARGB_8888 bitmap, turned upright.
    *
    * Rows can be padded, so a plane whose stride exceeds width * 4 is copied row
    * by row rather than in one block - copying the padding straight through
    * would shear the image and produce landmarks that are subtly wrong rather
    * than obviously broken.
+   *
+   * The frame is not un-mirrored here. A front camera mirrors the image, which
+   * swaps which hand MediaPipe calls left; decodeHolisticBuffer already undoes
+   * that when reading the buffer, and flipping the pixels too would put it
+   * back.
    */
-  private fun Image.toArgbBitmap(): Bitmap? {
+  private fun Image.toArgbBitmap(rotationDegrees: Int): Bitmap? {
     val plane = planes.firstOrNull() ?: return null
     val buffer = plane.buffer.also { it.rewind() }
     val rowStride = plane.rowStride
@@ -187,7 +235,7 @@ class HolisticFrameProcessorPlugin(
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     if (rowStride == tightStride) {
       bitmap.copyPixelsFromBuffer(buffer)
-      return bitmap
+      return bitmap.rotated(rotationDegrees)
     }
 
     val packed = ByteBuffer.allocateDirect(tightStride * height).order(ByteOrder.nativeOrder())
@@ -199,6 +247,12 @@ class HolisticFrameProcessorPlugin(
     }
     packed.rewind()
     bitmap.copyPixelsFromBuffer(packed)
-    return bitmap
+    return bitmap.rotated(rotationDegrees)
+  }
+
+  private fun Bitmap.rotated(degrees: Int): Bitmap {
+    if (degrees == 0) return this
+    val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
   }
 }
