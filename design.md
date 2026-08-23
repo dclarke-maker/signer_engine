@@ -140,7 +140,9 @@ One `HolisticLandmarker` call yields all four. Sizes are validated on ingest: a 
 | Face | 468 | `faceLandmarks` |
 | Pose | 33 | `poseLandmarks` |
 
-MediaPipe labels hands from the camera's point of view. A front camera mirrors the image, so the signer's left hand arrives in `rightHandLandmarks`; the mapping swaps them back, so "left hand" always means the signer's own left hand — which is what a linguistic annotation must mean.
+MediaPipe names hands anatomically, but for the person *as depicted in the frame it is given*. A mirrored frame depicts a mirrored person, so the labels come back swapped relative to the real signer, and the decoder swaps them back — "left hand" then always means the signer's own left hand, which is what a linguistic annotation must mean.
+
+Whether a frame is mirrored is **read from the frame, not configured**. It is a property of the lens and the platform: Android's analysis buffer and iOS's sample buffer do not agree for the same front camera, and an external webcam is generally not mirrored at all. A wrong answer here does not fail loudly — it labels every left hand as a right one across the entire corpus.
 
 Each landmark carries `x`, `y`, `z` plus a visibility score where the task provides one. A frame in which a stream is not detected records that stream as absent rather than as zeroes, so that downstream models can distinguish "hands out of frame" from "hands at the origin".
 
@@ -157,13 +159,16 @@ type LandmarkFrame = {
   rightHand: Landmark[] | null; // 21
   face: Landmark[] | null;      // 468
   pose: Landmark[] | null;      // 33
+  aspect?: number;              // frame width / height; see §4.5
 };
 
 interface LandmarkExtractor {
-  readonly id: string;          // e.g. "mediapipe-tasks@0.10" | "fixture@1"
+  readonly id: string;          // e.g. "mediapipe-holistic-native@1" | "fixture@1"
   start(options: { targetFps: number }): Promise<void>;
   subscribe(onFrame: (frame: LandmarkFrame) => void): () => void;
   stop(): Promise<LandmarkSequenceSummary>;
+  /** Present only on extractors that are fed frames rather than pulling them. */
+  acceptPackedFrame?(packed: string): void;
 }
 ```
 
@@ -173,7 +178,9 @@ Two implementations ship: the MediaPipe Tasks extractor, and a deterministic fix
 
 Sampling targets **30 fps**, with the achieved rate recorded per sequence so that variable device performance is visible in the data rather than hidden by it.
 
-Coordinates are stored **normalized** as MediaPipe emits them (image-relative, origin top-left). A derived, signer-normalized view — translated to a shoulder-midpoint origin and scaled by shoulder width — is computed at export time rather than at capture time, so that the raw capture remains re-processable if the normalization strategy changes.
+Coordinates are stored **normalized** as MediaPipe emits them (image-relative, origin top-left) — which means `x` is divided by frame width and `y` by frame height. On any frame that is not square those are two different units, so each frame also carries its aspect ratio; §4.5 covers why, and §5.3 covers what depends on it.
+
+Coordinates are stored A derived, signer-normalized view — translated to a shoulder-midpoint origin and scaled by shoulder width — is computed at export time rather than at capture time, so that the raw capture remains re-processable if the normalization strategy changes.
 
 The transmitted payload carries only what §3 permits:
 
@@ -193,6 +200,18 @@ The transmitted payload carries only what §3 permits:
 ```
 
 Sequences are compressed and written to object storage as blobs; the database holds the metadata and the storage key. No field in this payload carries an image, an audio sample, or a free-text identifier.
+
+### 4.5 The Frame as MediaPipe Receives It
+
+Three properties of the camera frame change what the landmarks mean, and none of them can be assumed. All three are established at the plugin and travel with the frame.
+
+**Rotation.** A device's sensor is mounted at an angle to its display, so a portrait capture arrives on its side. MediaPipe is not rotation invariant: `HolisticLandmarker` locates a pose first and crops the face and hand regions out of it, so a sideways frame yields a pose of some kind and then no face and no hands at all. The plugin turns the frame upright before detection.
+
+**Aspect ratio.** Because `x` is normalized by width and `y` by height, a unit of `x` on a 9:16 frame is 0.5625 of a unit of `y`. Every rule in §5.2 divides a vertical measure by shoulder width, which is horizontal, so without a correction each signal carries a hidden factor of width over height while the thresholds stay fixed fractions — the same gesture scoring differently on a 16:9 phone than on a 4:3 tablet. The frame carries the ratio it was normalized against, and §5.3 rescales into a space where the two axes are the same length.
+
+**Mirroring.** Covered in §4.2: it decides which hand is which.
+
+The packed buffer that carries a frame from the plugin to JavaScript therefore has a header of eight float32s — schema version, timestamp, the four stream counts, aspect, and the mirror flag — followed by four floats per landmark. It is delivered as a base64 string rather than an `ArrayBuffer` because the worklet runtime's shared-value conversion rejects array buffers outright and wraps arrays element by element, which for ~2,200 floats a frame is precisely the per-element bridging the packed layout exists to avoid. `lib/extractors/holistic-buffer.ts` is the authority for the layout and the executable specification the Swift and Kotlin writers must match.
 
 ---
 
@@ -217,6 +236,10 @@ Reproduced from the proposal's NMM table. The landmark indices are load-bearing 
 ### 5.3 Rule Contract
 
 Each rule is a pure function over a landmark window — no I/O, no device, no model. This is what makes them unit-testable with fixed arrays.
+
+Before any rule runs, the sequence is rescaled so that a unit on the x axis and a unit on the y axis are the same physical length, using the aspect ratio each frame carries (§4.5). Every rule below compares a vertical measure against shoulder width, which is horizontal, and those two are not comparable in raw normalized coordinates. `body_tilt` is the clearest case: it takes the angle of the shoulder line, and an angle computed from two differently scaled components is not an angle.
+
+Note that this correction is invisible to any test written in a unit square, where the factor happens to be exactly 1 — so the rule fixtures deliberately express a gesture as a camera of a given shape would actually record it.
 
 ```ts
 type NmmRule = {
