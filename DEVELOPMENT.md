@@ -132,7 +132,15 @@ npx eas-cli@latest login
 npx eas-cli@latest build --profile development --platform android
 ```
 
-`eas.json` defines three profiles. `development` produces a development client with `expo-dev-client`, which is what the frame processor needs; `preview` is an internal release build; `production` is store-bound. Android development builds need no paid account. iOS device builds require an Apple Developer membership; `--platform ios` with `"simulator": true` avoids that if a simulator build is enough.
+`eas.json` defines four profiles. `development` produces a development client with `expo-dev-client`, which is what the frame processor needs; `preview` is an internal release build; `production` is store-bound.
+
+Android development builds need no paid account. **iOS device builds require an Apple Developer membership**, so `ios-simulator` extends `development` with `"simulator": true` — it needs no Apple account and is enough to prove the Swift plugin compiles, which an Android build never exercises:
+
+```bash
+npx eas build --profile ios-simulator --platform ios
+```
+
+A simulator build cannot open a real camera, so it verifies compilation and wiring, not extraction.
 
 Once the development client is installed, `pnpm dev` drives it as usual.
 
