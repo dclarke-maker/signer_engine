@@ -74,6 +74,30 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 - [x] Compose files retargeted to `signbridge-sequences`, with consent, split-seed, and calibration-buffer variables.
 - [x] `DEVELOPMENT.md` rewritten for the landmark pipeline, privacy posture, and prebuild requirement.
 
+## Open — found while verifying on a device
+
+- [ ] **Sequences are uploaded uncompressed.** `lib/upload-sequence.ts` sends plain
+  `application/json`. The server already gunzips (`sequence-upload.ts` branches on
+  `application/gzip`), the storage key already ends `.json.gz`, and design.md §4.4
+  says sequences are compressed — only the client half was never written, so the
+  stored object is uncompressed JSON behind a `.json.gz` name.
+
+  Measured on the real 128-frame sequence pulled back out of MinIO:
+
+  | | per sentence | per signer (100) | study (35 signers) |
+  | --- | --- | --- | --- |
+  | today, uncompressed | 15.8 MB | 1.5 GB | 54 GB |
+  | gzip only | 5.6 MB | 0.6 GB | 19 GB |
+  | 5 decimals + gzip | 2.1 MB | 0.2 GB | 7 GB |
+
+  Coordinates serialise at full float64 (`0.6392536163330078`). Rounding to five
+  decimals is 1e-5, which on a 1080px frame is a hundredth of a pixel — far below
+  what MediaPipe resolves — so it is lossless for this purpose and does most of the
+  work. Needs a pure-JS gzip (`fflate`) since Hermes has no `CompressionStream`.
+
+  This matters for fieldwork, not just for the bucket: participants upload 100
+  sentences over their own mobile data in the Kathmandu Valley.
+
 ## Superseded
 
 Completed against the pre-proposal design and now replaced by the privacy pipeline.
