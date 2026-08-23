@@ -38,12 +38,23 @@ export default function LiveTranslateScreen() {
   const startedAtRef = useRef(0);
 
   const signerQuery = trpc.signer.me.useQuery();
+  const consentQuery = trpc.consent.status.useQuery();
   const startSession = trpc.capture.startSession.useMutation();
   const requestTranslation = trpc.translation.request.useMutation();
 
   useEffect(() => {
     if (!signerQuery.isLoading && !signerQuery.data) router.replace("/sign-in");
   }, [signerQuery.data, signerQuery.isLoading]);
+
+  // startSession is refused server-side without consent. Checking here means a
+  // participant is asked before signing, rather than after - the alternative is
+  // a dead end reached only once they have already performed.
+  useEffect(() => {
+    if (!signerQuery.data) return;
+    if (!consentQuery.isLoading && consentQuery.data && !consentQuery.data.granted) {
+      router.replace("/consent");
+    }
+  }, [signerQuery.data, consentQuery.data, consentQuery.isLoading]);
 
   useEffect(() => {
     if (phase !== "signing") return;
