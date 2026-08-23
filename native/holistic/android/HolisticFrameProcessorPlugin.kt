@@ -47,22 +47,41 @@ class HolisticFrameProcessorPlugin(
     const val BYTES_PER_PIXEL = 4
   }
 
-  private val landmarker: HolisticLandmarker? = try {
-    val base = BaseOptions.builder()
-      .setModelAssetPath(MODEL_ASSET)
-      .setDelegate(Delegate.GPU)
-      .build()
-    val opts = HolisticLandmarker.HolisticLandmarkerOptions.builder()
-      .setBaseOptions(base)
-      .setRunningMode(RunningMode.VIDEO)
-      // Not part of this pipeline, and both cost time on every frame.
-      .setOutputFaceBlendshapes(false)
-      .setOutputPoseSegmentationMasks(false)
-      .build()
-    HolisticLandmarker.createFromOptions(proxy.context, opts)
-  } catch (e: Throwable) {
-    Log.e(TAG, "failed to create HolisticLandmarker", e)
-    null
+  /**
+   * GPU delegation is faster but not universally available - drivers vary, and
+   * devices outside the mainstream Android ecosystem (Huawei/Kirin, HarmonyOS)
+   * are the likeliest to reject it. A failed delegate would leave the
+   * landmarker null and every frame silently returning nothing, so CPU is tried
+   * before giving up, and whichever succeeded is logged.
+   */
+  private val landmarker: HolisticLandmarker? = createLandmarker(proxy)
+
+  private fun createLandmarker(proxy: VisionCameraProxy): HolisticLandmarker? {
+    for (delegate in listOf(Delegate.GPU, Delegate.CPU)) {
+      try {
+        val base = BaseOptions.builder()
+          .setModelAssetPath(MODEL_ASSET)
+          .setDelegate(delegate)
+          .build()
+        val opts = HolisticLandmarker.HolisticLandmarkerOptions.builder()
+          .setBaseOptions(base)
+          .setRunningMode(RunningMode.VIDEO)
+          // Not part of this pipeline, and both cost time on every frame.
+          .setOutputFaceBlendshapes(false)
+          .setOutputPoseSegmentationMasks(false)
+          .build()
+        val created = HolisticLandmarker.createFromOptions(proxy.context, opts)
+        Log.i(TAG, "HolisticLandmarker ready on $delegate")
+        return created
+      } catch (e: Throwable) {
+        Log.w(TAG, "HolisticLandmarker could not start on $delegate", e)
+      }
+    }
+    Log.e(
+      TAG,
+      "HolisticLandmarker failed on every delegate. Captures will contain no frames.",
+    )
+    return null
   }
 
   override fun callback(frame: Frame, arguments: Map<String, Any>?): Any? {
