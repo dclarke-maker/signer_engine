@@ -66,6 +66,13 @@ else:
     subprocess.run(["git", "-C", str(REPO), "pull", "--ff-only"], check=False)
 sys.path.insert(0, str(REPO))
 
+# Drop any previously imported copies so a git pull actually takes effect.
+# Python caches modules in sys.modules, so re-running this cell after a pull
+# otherwise keeps executing the old bytecode while tracebacks render the new
+# source - which reads as a fix that did not work rather than a stale import.
+for _name in [m for m in list(sys.modules) if m == "tools" or m.startswith("tools.")]:
+    del sys.modules[_name]
+
 # mediapipe pulls a large wheel; skip when the runtime already has it.
 try:
     import mediapipe  # noqa: F401
