@@ -1,0 +1,6 @@
+# Enough to run the pure tests without MediaPipe or a video decoder. The
+# extractor tests skip themselves when mediapipe is absent, the same way the
+# database-backed vitest suites skip without DATABASE_URL.
+numpy>=1.24
+pytest>=8
+requests>=2.31

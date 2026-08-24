@@ -1,0 +1,6 @@
+# Colab already carries numpy and opencv; pinned here so a local or CI run
+# reproduces what the notebook used.
+mediapipe>=0.10.14
+numpy>=1.24
+opencv-python-headless>=4.8
+requests>=2.31

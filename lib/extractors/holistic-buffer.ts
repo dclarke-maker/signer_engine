@@ -35,7 +35,7 @@ import {
  *   [1] timestamp, milliseconds from the plugin's monotonic clock. The plugin
  *       outlives a capture, so the extractor rebases it on each capture's
  *       first frame; the value here is not zero at the start of a capture.
- *   [2] face count        (0 or 468)
+ *   [2] face count        (0, 468, or 478 with iris)
  *   [3] pose count        (0 or 33)
  *   [4] left hand count   (0 or 21)
  *   [5] right hand count  (0 or 21)
