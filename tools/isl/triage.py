@@ -91,13 +91,16 @@ def _pick(header: Sequence[str], candidates: Sequence[str]) -> str | None:
 
 
 def _source_of(raw: dict[str, str], source_column: str | None, uid: str) -> str:
+    """The origin channel, only when the release actually states it.
+
+    Never inferred from the UID. iSign UIDs are opaque YouTube video ids, and
+    substring-matching a channel name into one produces false positives: on the
+    first real run `3EJxfiSHeIY` matched "ISH" because those three letters
+    appear inside it, and the whole smoke test was then drawn from two videos
+    labelled with a channel neither of them came from.
+    """
     if source_column and raw.get(source_column):
         return str(raw[source_column]).strip()
-    # Fall back to the UID, which on this release encodes the origin channel.
-    haystack = uid.upper()
-    for known in KNOWN_SOURCES:
-        if known in haystack:
-            return known
     return "unknown"
 
 
@@ -194,16 +197,29 @@ def select_continuous(rows: Iterable[Row]) -> tuple[list[Row], list[tuple[Row, s
     return keep, dropped
 
 
-def stratified_sample(rows: Sequence[Row], count: int, *, seed: int = 20260824) -> list[Row]:
-    """A sample spread across sources, not the first N rows.
+def stratified_sample(
+    rows: Sequence[Row], count: int, *, seed: int = 20260824, by: str = "auto"
+) -> list[Row]:
+    """A sample spread across the corpus, not the first N rows.
 
-    Taking the head of the file would sample one channel, one signer and one
-    recording setup, and every throughput and detection-rate number measured from
-    it would generalise to nothing.
+    Taking the head of the file would sample one recording, one signer and one
+    setup, and every throughput and detection-rate number measured from it would
+    generalise to nothing. That is not hypothetical: the first real run drew all
+    thirty clips from **two** source videos.
+
+    Stratifies by source channel when the release states one, and otherwise by
+    **source video**, which is always available and is the closest proxy for a
+    distinct signer and recording setup. Channel-based stratification over a
+    single "unknown" group is stratification in name only.
     """
+    key = by
+    if key == "auto":
+        key = "source" if len({r.source for r in rows}) > 1 else "video"
+    pick = (lambda r: r.source) if key == "source" else (lambda r: r.video_id)
+
     groups: dict[str, list[Row]] = {}
     for row in rows:
-        groups.setdefault(row.source, []).append(row)
+        groups.setdefault(pick(row), []).append(row)
 
     rng = random.Random(seed)
     for group in groups.values():
@@ -220,15 +236,28 @@ def stratified_sample(rows: Sequence[Row], count: int, *, seed: int = 20260824) 
     return out
 
 
-def audit_sample(rows: Sequence[Row], per_group: int = 20, *, seed: int = 20260824
-                 ) -> list[Row]:
-    """Rows for a human to label, drawn evenly from every inferred group."""
+def audit_sample(
+    rows: Sequence[Row], per_group: int = 20, *, seed: int = 20260824, groups_max: int = 5
+) -> list[Row]:
+    """Rows for a human to label, spread across the corpus.
+
+    Grouped the same way as `stratified_sample`, so the audit covers what the
+    corpus actually contains rather than one recording. With no channel column
+    there are tens of thousands of source videos, so a bounded number of them is
+    sampled rather than every one.
+    """
+    key = "source" if len({r.source for r in rows}) > 1 else "video"
+    pick = (lambda r: r.source) if key == "source" else (lambda r: r.video_id)
+
     groups: dict[str, list[Row]] = {}
     for row in rows:
-        groups.setdefault(row.source, []).append(row)
+        groups.setdefault(pick(row), []).append(row)
+
     rng = random.Random(seed)
+    names = sorted(groups)
+    rng.shuffle(names)
     out: list[Row] = []
-    for name in sorted(groups):
+    for name in names[:groups_max]:
         group = list(groups[name])
         rng.shuffle(group)
         out.extend(group[:per_group])
