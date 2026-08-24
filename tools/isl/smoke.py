@@ -148,41 +148,52 @@ def run_batch(
     return reports
 
 
-def _worker(args) -> float:
-    """Frames processed, for the throughput benchmark only."""
+def _worker(args) -> tuple[float, float]:
+    """Frames processed and this process's own peak RSS.
+
+    Memory is reported from inside the worker because the parent cannot see it:
+    ru_maxrss is a high-water mark that never falls, so a parent-side reading is
+    cumulative across the whole session and reports the same figure for every
+    worker count - which is exactly what the first two runs produced.
+    """
     uid, path, out_dir, prefer_gpu = args
     sequence, _ = extract_clip(Path(path), uid=uid, prefer_gpu=prefer_gpu)
-    return float(sequence.frame_count)
+    scale = 1024 * 1024 if os.uname().sysname == "Darwin" else 1024
+    own = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / scale
+    return float(sequence.frame_count), float(own)
 
 
 def benchmark_workers(
     clip_paths: Sequence[tuple[str, str]],
     out_dir: Path,
     *,
-    counts: Sequence[int] = (1, 2, 4),
+    counts: Sequence[int] | None = None,
     prefer_gpu: bool = False,
 ) -> list[dict[str, Any]]:
     """Aggregate throughput and peak memory at each worker count.
 
-    More workers are not automatically faster. The chosen count is justified
-    from these numbers rather than assumed, because the difference between two
-    and four decides whether the corpus takes days or weeks.
+    More workers are not automatically faster - on a two-core runtime throughput
+    was flat, because MediaPipe already multi-threads inside one process. On 48
+    cores it scaled near-linearly. So the counts tried are derived from the
+    machine rather than fixed, and capped at the core count.
     """
+    if counts is None:
+        cpus = os.cpu_count() or 2
+        counts = [c for c in (1, 2, 4, 8, 16, 24) if c <= cpus] or [1]
     out: list[dict[str, Any]] = []
     for count in counts:
         started = time.perf_counter()
         before = peak_rss_mb()
-        # Children are reaped between runs, so the child high-water mark is the
-        # closest thing to a per-run reading available from rusage.
-        child_before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
         payload = [(uid, path, str(out_dir), prefer_gpu) for uid, path in clip_paths]
 
         if count == 1:
-            frames = [_worker(item) for item in payload]
+            results = [_worker(item) for item in payload]
         else:
             with ProcessPoolExecutor(max_workers=count) as pool:
-                frames = list(pool.map(_worker, payload))
+                results = list(pool.map(_worker, payload))
 
+        frames = [f for f, _ in results]
+        worker_rss = [m for _, m in results]
         elapsed = time.perf_counter() - started
         out.append(
             {
@@ -191,19 +202,13 @@ def benchmark_workers(
                 "frames": int(sum(frames)),
                 "seconds": elapsed,
                 "frames_per_second": sum(frames) / elapsed if elapsed else 0.0,
-                "peak_rss_mb": peak_rss_mb(),
-                # What this run added on top of the session high-water mark.
-                # The absolute figure is cumulative and identical across runs.
-                "peak_rss_delta_mb": max(0.0, peak_rss_mb() - before),
-                "child_peak_rss_mb": (
-                    resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
-                    / (1024 * 1024 if os.uname().sysname == "Darwin" else 1024)
-                ),
-                "child_peak_delta_mb": max(
-                    0.0,
-                    (resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss - child_before)
-                    / (1024 * 1024 if os.uname().sysname == "Darwin" else 1024),
-                ),
+                # Measured inside the workers. `peak_worker_rss_mb` is one
+                # process; `concurrent_rss_mb` is the worst case with `count` of
+                # them alive at once, which is the figure that decides whether a
+                # worker count fits in the runtime's memory.
+                "peak_worker_rss_mb": max(worker_rss) if worker_rss else 0.0,
+                "concurrent_rss_mb": (max(worker_rss) if worker_rss else 0.0) * count,
+                "session_rss_mb": peak_rss_mb(),
                 "cpu_count": os.cpu_count(),
             }
         )

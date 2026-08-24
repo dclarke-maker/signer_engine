@@ -309,7 +309,9 @@ CELL_WORKERS = '''#@title Worker scaling — measured, not assumed
 import tempfile
 
 BENCH_CLIPS = 6  #@param {type:"integer"}
-WORKER_COUNTS = [1, 2, 4]  #@param
+# Empty means "derive from the machine": 1,2,4,8,16,24 capped at the core count.
+# A fixed list stopped at 4 on a 48-core runtime and missed the ceiling entirely.
+WORKER_COUNTS = []  #@param
 
 bench_dir = Path(tempfile.mkdtemp())
 paths = []
@@ -318,10 +320,13 @@ for row in selected[:BENCH_CLIPS]:
     target.write_bytes(archive.read(by_stem[row.uid]))
     paths.append((row.uid, str(target)))
 
-bench = smoke.benchmark_workers(paths, bench_dir, counts=WORKER_COUNTS, prefer_gpu=PREFER_GPU)
+bench = smoke.benchmark_workers(
+    paths, bench_dir, counts=WORKER_COUNTS or None, prefer_gpu=PREFER_GPU
+)
 for entry in bench:
-    print(f"{entry['workers']} worker(s): {entry['frames_per_second']:6.1f} fps, "
-          f"peak RSS {entry['peak_rss_mb']:.0f} MB")
+    print(f"{entry['workers']:3d} worker(s): {entry['frames_per_second']:7.1f} fps "
+          f"| per-worker {entry['peak_worker_rss_mb']:6.0f} MB "
+          f"| concurrent {entry['concurrent_rss_mb']:7.0f} MB")
 
 best = max(bench, key=lambda e: e["frames_per_second"])
 print(f"\\nfastest: {best['workers']} workers at {best['frames_per_second']:.1f} fps")
