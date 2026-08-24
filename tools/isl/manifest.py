@@ -101,13 +101,15 @@ class Manifest:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def record_done(self, uid: str, path: str, **detail: Any) -> None:
-        self.record(Entry(uid=uid, status="done", path=path, detail=detail))
+    def record_done(self, uid: str, path: str, detail: dict[str, Any] | None = None) -> None:
+        self.record(Entry(uid=uid, status="done", path=path, detail=dict(detail or {})))
 
-    def record_failed(self, uid: str, error: str, **detail: Any) -> None:
+    def record_failed(
+        self, uid: str, error: str, detail: dict[str, Any] | None = None
+    ) -> None:
         # Reason, not just the fact: "why did 4% fail" is a question the smoke
         # test has to answer before anyone commits to the full corpus.
-        self.record(Entry(uid=uid, status="failed", error=error, detail=detail))
+        self.record(Entry(uid=uid, status="failed", error=error, detail=dict(detail or {})))
 
     def compact(self) -> None:
         """Collapse repeated entries for the same uid. Never required, only tidy.

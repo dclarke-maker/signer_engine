@@ -136,9 +136,11 @@ def run_batch(
         except Exception as error:  # noqa: BLE001
             # Reason, not just the fact. "Why did 4% fail" has to be answerable
             # before anyone commits to processing the corpus.
-            manifest.record_failed(row.uid, f"{type(error).__name__}: {error}", source=row.source)
+            manifest.record_failed(
+                row.uid, f"{type(error).__name__}: {error}", {"source": row.source}
+            )
             continue
-        manifest.record_done(result.uid, result.npz_path, **result.report)
+        manifest.record_done(result.uid, result.npz_path, result.report)
         reports.append(result.report)
 
     return reports

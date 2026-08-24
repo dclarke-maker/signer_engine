@@ -25,14 +25,14 @@ class TestManifest:
         manifest = Manifest(tmp_path / "manifest.jsonl")
         uids = ["a", "b", "c"]
         for uid in uids:
-            manifest.record_done(uid, path=f"/drive/{uid}.npz")
+            manifest.record_done(uid, f"/drive/{uid}.npz")
 
         reopened = Manifest(tmp_path / "manifest.jsonl")
         assert reopened.pending(uids) == []
 
     def test_state_survives_reopening(self, tmp_path):
         path = tmp_path / "manifest.jsonl"
-        Manifest(path).record_done("a", path="/drive/a.npz", frames=120)
+        Manifest(path).record_done("a", "/drive/a.npz", {"frames": 120})
 
         reopened = Manifest(path)
         assert "a" in reopened
@@ -42,8 +42,8 @@ class TestManifest:
         # What a killed session leaves behind.
         path = tmp_path / "manifest.jsonl"
         manifest = Manifest(path)
-        manifest.record_done("a", path="/drive/a.npz")
-        manifest.record_done("b", path="/drive/b.npz")
+        manifest.record_done("a", "/drive/a.npz")
+        manifest.record_done("b", "/drive/b.npz")
         with open(path, "a", encoding="utf8") as handle:
             handle.write('{"uid": "c", "stat')
 
@@ -60,9 +60,39 @@ class TestManifest:
         assert manifest.pending(["bad"], retry_failed=True) == ["bad"]
         assert "unreadable codec" in manifest.failed()[0].error
 
+    def test_records_a_measurement_that_carries_its_own_uid(self, tmp_path):
+        # The real caller hands over ExtractionReport.as_dict(), which has a
+        # `uid` field of its own. Splatting that into **kwargs collided with the
+        # method's own parameter and raised TypeError - after the clip had been
+        # processed and its .npz written, so the work was done and only the
+        # bookkeeping failed. Detail is a dict for exactly this reason.
+        manifest = Manifest(tmp_path / "manifest.jsonl")
+        measurement = {
+            "uid": "clip-1",          # collides with the uid parameter
+            "path": "/elsewhere.npz",  # and with path
+            "status": "whatever",      # and with status
+            "frame_count": 342,
+            "source_fps": 25.0,
+        }
+
+        manifest.record_done("clip-1", "/drive/clip-1.npz", measurement)
+
+        entry = Manifest(tmp_path / "manifest.jsonl").get("clip-1")
+        assert entry.status == "done"
+        assert entry.path == "/drive/clip-1.npz"
+        assert entry.detail["frame_count"] == 342
+
+    def test_records_a_failure_detail_that_carries_its_own_uid(self, tmp_path):
+        manifest = Manifest(tmp_path / "manifest.jsonl")
+        manifest.record_failed("clip-2", "RuntimeError: no frames", {"uid": "other", "source": "ISH"})
+
+        entry = manifest.get("clip-2")
+        assert entry.status == "failed"
+        assert entry.detail["source"] == "ISH"
+
     def test_summary_groups_failures_by_reason(self, tmp_path):
         manifest = Manifest(tmp_path / "manifest.jsonl")
-        manifest.record_done("a", path="x")
+        manifest.record_done("a", "x")
         manifest.record_failed("b", "unreadable codec: foo")
         manifest.record_failed("c", "unreadable codec: bar")
 
@@ -78,7 +108,7 @@ class TestManifest:
         path = tmp_path / "manifest.jsonl"
         manifest = Manifest(path)
         manifest.record_failed("a", "transient")
-        manifest.record_done("a", path="/drive/a.npz")
+        manifest.record_done("a", "/drive/a.npz")
         manifest.compact()
 
         reopened = Manifest(path)
