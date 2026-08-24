@@ -91,3 +91,8 @@ tools/isl/**/__pycache__/
 # iSign clips are CC-BY-NC-SA (redistribution) and the frames show a person.
 tools/isl/fixtures/frames/
 tools/isl/fixtures/*.json
+
+# Screen recordings and scratch captures — large, and not project artefacts
+*.mov
+*.mp4
+!native/holistic/models/*
