@@ -76,27 +76,21 @@ Implementation plan: `docs/superpowers/plans/2026-08-22-nsl-landmark-pipeline.md
 
 ## Open — found while verifying on a device
 
-- [ ] **Sequences are uploaded uncompressed.** `lib/upload-sequence.ts` sends plain
-  `application/json`. The server already gunzips (`sequence-upload.ts` branches on
-  `application/gzip`), the storage key already ends `.json.gz`, and design.md §4.4
-  says sequences are compressed — only the client half was never written, so the
-  stored object is uncompressed JSON behind a `.json.gz` name.
+- [x] **Sequences are uploaded uncompressed.** Fixed. `lib/sequence-payload.ts`
+  rounds coordinates to five decimals and gzips; the upload route already
+  expected `application/gzip`.
 
-  Measured on the real 128-frame sequence pulled back out of MinIO:
+  This was not an optimisation. A fifteen-second sentence at the design's 30fps
+  with a face detected serialised to **24.9 MB, over the server's own 24 MB
+  limit** — the first real sentence of collection failed to upload, and a longer
+  test capture (4061 frames, ~181 MB) never left the device at all:
+  `Failed to send url request`. It is now **1.45 MB, a 17x reduction**, and
+  `tests/upload-size.test.ts` fails if a realistic sentence ever approaches the
+  limit again.
 
-  | | per sentence | per signer (100) | study (35 signers) |
-  | --- | --- | --- | --- |
-  | today, uncompressed | 15.8 MB | 1.5 GB | 54 GB |
-  | gzip only | 5.6 MB | 0.6 GB | 19 GB |
-  | 5 decimals + gzip | 2.1 MB | 0.2 GB | 7 GB |
-
-  Coordinates serialise at full float64 (`0.6392536163330078`). Rounding to five
-  decimals is 1e-5, which on a 1080px frame is a hundredth of a pixel — far below
-  what MediaPipe resolves — so it is lossless for this purpose and does most of the
-  work. Needs a pure-JS gzip (`fflate`) since Hermes has no `CompressionStream`.
-
-  This matters for fieldwork, not just for the bucket: participants upload 100
-  sentences over their own mobile data in the Kathmandu Valley.
+  The bug was hidden until now by another one: while every face-bearing frame
+  was being discarded, payloads were roughly fourteen times smaller and uploads
+  appeared to work.
 
 ## Superseded
 
