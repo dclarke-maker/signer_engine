@@ -46,6 +46,13 @@ export function makeSequence(options: {
  * for the landmarks the NMM rules actually read - a baseline derived from it is
  * meaningless and every rule fires at once. Use this whenever a test touches
  * baseline computation or detection.
+ *
+ * **The sign convention matches MediaPipe, not the page.** In an unmirrored
+ * frame the signer's left shoulder appears at a *larger* x than their right, so
+ * pose[11].x > pose[12].x. An earlier version of this fixture had it the other
+ * way round, which read naturally but inverted the horizontal axis relative to
+ * every real capture - and hid a body_tilt rule that returned roughly pi on
+ * every real frame while these tests reported it as level.
  */
 export function makePoseFrame(
   t: number,
@@ -70,17 +77,22 @@ export function makePoseFrame(
     if (v) arr[i] = { x: v[0], y: v[1], z: v[2], visibility: 1 };
   };
 
-  set(pose, 11, o.shoulderL ?? [0.4, 0.5, 0]);
-  set(pose, 12, o.shoulderR ?? [0.6, 0.5, 0]);
-  set(pose, 23, o.hipL ?? [0.42, 0.8, 0]);
-  set(pose, 24, o.hipR ?? [0.58, 0.8, 0]);
-  set(face, 0, o.nose ?? [0.5, 0.35, 0]);
-  set(face, 7, o.earL ?? [0.42, 0.32, 0]);
-  set(face, 8, o.earR ?? [0.58, 0.32, 0]);
-  set(face, 33, o.eyeL ?? [0.45, 0.33, 0]);
-  set(face, 133, o.eyeR ?? [0.55, 0.33, 0]);
-  set(face, 105, o.browL ?? [0.45, 0.3, 0]);
-  set(face, 334, o.browR ?? [0.55, 0.3, 0]);
+  // Left at the larger x, as MediaPipe reports it.
+  set(pose, 11, o.shoulderL ?? [0.6, 0.5, 0]);
+  set(pose, 12, o.shoulderR ?? [0.4, 0.5, 0]);
+  set(pose, 23, o.hipL ?? [0.58, 0.8, 0]);
+  set(pose, 24, o.hipR ?? [0.42, 0.8, 0]);
+  // Nose and ears come from the pose model; the face mesh has no ear landmark.
+  set(pose, 0, o.nose ?? [0.5, 0.35, 0]);
+  set(pose, 7, o.earL ?? [0.58, 0.32, 0]);
+  set(pose, 8, o.earR ?? [0.42, 0.32, 0]);
+  // Each eye needs both of its own corners: 33/133 are one eye, 263/362 the other.
+  set(face, 33, o.eyeL ?? [0.57, 0.33, 0]);
+  set(face, 133, o.eyeL ?? [0.53, 0.33, 0]);
+  set(face, 263, o.eyeR ?? [0.43, 0.33, 0]);
+  set(face, 362, o.eyeR ?? [0.47, 0.33, 0]);
+  set(face, 105, o.browL ?? [0.55, 0.3, 0]);
+  set(face, 334, o.browR ?? [0.45, 0.3, 0]);
 
   return { ...base, t, pose, face };
 }

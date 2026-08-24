@@ -11,6 +11,16 @@ export type ThresholdProfile = {
   headshakeMinReversals: number;
   /** Sliding window, in frames, used for the headshake oscillation test. */
   headshakeWindowFrames: number;
+  /**
+   * Lowest MediaPipe visibility a landmark may have and still be measured.
+   *
+   * The model reports how well it can actually see each point, and a landmark
+   * it cannot see is extrapolated rather than observed. A head-and-shoulders
+   * framing puts the hips out of frame entirely - measured at 0.001 on a real
+   * capture - and forward_lean, which is nothing but shoulder-to-hip depth,
+   * produced twelve confident tags from coordinates the model had invented.
+   */
+  minVisibility: number;
 };
 
 /**
@@ -32,6 +42,7 @@ export const thresholdProfiles: Record<string, ThresholdProfile> = {
     },
     headshakeMinReversals: 3,
     headshakeWindowFrames: 20,
+    minVisibility: 0.5,
   },
 };
 

@@ -1,19 +1,20 @@
 import type { LandmarkFrame } from "../../shared/landmarks";
 import type { NmmType } from "../../shared/workflow";
 import {
-  FACE_BROW_LEFT,
-  FACE_BROW_RIGHT,
-  FACE_EAR_LEFT,
-  FACE_EAR_RIGHT,
-  FACE_EYE_LEFT,
-  FACE_EYE_RIGHT,
-  FACE_NOSE,
+  FACE_BROW_A,
+  FACE_BROW_B,
+  POSE_EAR_LEFT,
+  POSE_EAR_RIGHT,
   POSE_HIP_LEFT,
   POSE_HIP_RIGHT,
+  POSE_NOSE,
   POSE_SHOULDER_LEFT,
   POSE_SHOULDER_RIGHT,
   distance2d,
   midpoint,
+  ocularCentroid,
+  posePointsVisible,
+  shoulderAngle,
   type SignerBaseline,
 } from "./baseline";
 import { toIsotropicSequence } from "./isotropic";
@@ -40,6 +41,9 @@ export type NmmRule = {
 
 type RuleContext = { baseline: SignerBaseline; profile: ThresholdProfile };
 
+/** The pair every rule needs, since every measure is scaled by shoulder width. */
+const SHOULDERS = [POSE_SHOULDER_LEFT, POSE_SHOULDER_RIGHT];
+
 function shoulderWidthOf(frame: LandmarkFrame): number | null {
   if (!frame.pose) return null;
   const width = distance2d(frame.pose[POSE_SHOULDER_LEFT], frame.pose[POSE_SHOULDER_RIGHT]);
@@ -52,9 +56,10 @@ const eyebrowRaise: NmmRule = {
   signal(frames, i, { baseline, profile }) {
     const frame = frames[i];
     const width = shoulderWidthOf(frame);
-    if (!frame.face || width === null) return null;
-    const eyeMid = midpoint(frame.face[FACE_EYE_LEFT], frame.face[FACE_EYE_RIGHT]);
-    const browMid = midpoint(frame.face[FACE_BROW_LEFT], frame.face[FACE_BROW_RIGHT]);
+    if (!frame.face || !frame.pose || width === null) return null;
+    if (!posePointsVisible(frame.pose, SHOULDERS, profile.minVisibility)) return null;
+    const eyeMid = ocularCentroid(frame.face);
+    const browMid = midpoint(frame.face[FACE_BROW_A], frame.face[FACE_BROW_B]);
     const gap = (eyeMid.y - browMid.y) / width;
     return (gap - baseline.neutralBrowGap) / profile.values.eyebrow_raise;
   },
@@ -66,9 +71,11 @@ const shoulderShrug: NmmRule = {
   signal(frames, i, { baseline, profile }) {
     const frame = frames[i];
     const width = shoulderWidthOf(frame);
-    if (!frame.face || !frame.pose || width === null) return null;
+    if (!frame.pose || width === null) return null;
+    if (!posePointsVisible(frame.pose, [...SHOULDERS, POSE_EAR_LEFT, POSE_EAR_RIGHT], profile.minVisibility))
+      return null;
     const shoulderMid = midpoint(frame.pose[POSE_SHOULDER_LEFT], frame.pose[POSE_SHOULDER_RIGHT]);
-    const earMid = midpoint(frame.face[FACE_EAR_LEFT], frame.face[FACE_EAR_RIGHT]);
+    const earMid = midpoint(frame.pose[POSE_EAR_LEFT], frame.pose[POSE_EAR_RIGHT]);
     const gap = (shoulderMid.y - earMid.y) / width;
     // Compression: the gap shrinks as the shoulders rise toward the ears.
     return (baseline.neutralShoulderEarGap - gap) / profile.values.shoulder_shrug;
@@ -82,6 +89,11 @@ const forwardLean: NmmRule = {
     const frame = frames[i];
     const width = shoulderWidthOf(frame);
     if (!frame.pose || width === null) return null;
+    // The hips are the whole measurement here. A head-and-shoulders framing
+    // puts them outside the frame, where MediaPipe extrapolates them and says
+    // so with a visibility near zero; a lean inferred from those is fiction.
+    if (!posePointsVisible(frame.pose, [...SHOULDERS, POSE_HIP_LEFT, POSE_HIP_RIGHT], profile.minVisibility))
+      return null;
     const shoulderMid = midpoint(frame.pose[POSE_SHOULDER_LEFT], frame.pose[POSE_SHOULDER_RIGHT]);
     const hipMid = midpoint(frame.pose[POSE_HIP_LEFT], frame.pose[POSE_HIP_RIGHT]);
     const delta = (shoulderMid.z - hipMid.z) / width;
@@ -93,13 +105,18 @@ const forwardLean: NmmRule = {
 const bodyTilt: NmmRule = {
   type: "body_tilt",
   ruleVersion: BASELINE_RULE_VERSION,
-  signal(frames, i, { profile }) {
+  signal(frames, i, { baseline, profile }) {
     const frame = frames[i];
     if (!frame.pose) return null;
-    const left = frame.pose[POSE_SHOULDER_LEFT];
-    const right = frame.pose[POSE_SHOULDER_RIGHT];
-    const angle = Math.abs(Math.atan2(right.y - left.y, right.x - left.x));
-    return angle / profile.values.body_tilt;
+    if (!posePointsVisible(frame.pose, SHOULDERS, profile.minVisibility)) return null;
+    // Measured against the signer's own neutral, like every other rule. The
+    // absolute angle is not the marker: a camera is never square to a signer,
+    // and this rule previously tagged whole captures as one continuous tilt.
+    const angle = shoulderAngle(
+      frame.pose[POSE_SHOULDER_LEFT],
+      frame.pose[POSE_SHOULDER_RIGHT],
+    );
+    return Math.abs(angle - baseline.neutralShoulderAngle) / profile.values.body_tilt;
   },
 };
 
@@ -115,9 +132,10 @@ const headshake: NmmRule = {
     for (let k = start; k < end; k += 1) {
       const frame = frames[k];
       const width = shoulderWidthOf(frame);
-      if (!frame.face || !frame.pose || width === null) continue;
+      if (!frame.pose || width === null) continue;
+      if (!posePointsVisible(frame.pose, [...SHOULDERS, POSE_NOSE], profile.minVisibility)) continue;
       const shoulderMid = midpoint(frame.pose[POSE_SHOULDER_LEFT], frame.pose[POSE_SHOULDER_RIGHT]);
-      offsets.push((frame.face[FACE_NOSE].x - shoulderMid.x) / width - baseline.neutralNoseOffset);
+      offsets.push((frame.pose[POSE_NOSE].x - shoulderMid.x) / width - baseline.neutralNoseOffset);
     }
 
     if (offsets.length < 4) return null;

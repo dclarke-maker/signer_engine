@@ -227,17 +227,25 @@ Annotation is performed at the sentence level. Because each recording correspond
 
 Reproduced from the proposal's NMM table. The landmark indices are load-bearing — a wrong index produces silently wrong linguistics.
 
+**Three indices are corrected against the proposal, having been checked on a real capture.** The proposal lists the nose as "Face: 0" and the ears as "Face: 7, 8", but those are *pose* indices: the face mesh covers the face surface and carries no ear landmark at any index, while pose 0 is the nose and pose 7 and 8 are the ears. Measured on a detected face, `face[7]` and `face[8]` sit near one eye and the nose bridge — not a symmetric pair, so averaging them produced a point nowhere near the head's midline. Likewise 33 and 133 are the outer and inner corners of *one* eye rather than one eye each; the other eye is 263 and 362, and an ocular centroid needs both.
+
 | NMM type | Linguistic function | Geometric detection rule | MediaPipe landmarks |
 | --- | --- | --- | --- |
-| **Eyebrow raise** | Question marking | Normalized vertical distance between ocular centroids and superciliary landmarks exceeds threshold | Face: 33, 133 (eyes); 105, 334 (eyebrows) |
-| **Headshake** | Negation | Horizontal frequency oscillation (x-axis) of the nose point relative to a stable shoulder baseline | Face: 0; Pose: 11, 12 |
-| **Shoulder shrug** | Uncertainty / indifference | Compression of vertical distance (y-axis) between acromion (shoulder) and auditory (ear) landmarks | Pose: 11, 12; Face: 7, 8 |
+| **Eyebrow raise** | Question marking | Normalized vertical distance between ocular centroids and superciliary landmarks exceeds threshold | Face: 33, 133 and 263, 362 (eye corners); 105, 334 (eyebrows) |
+| **Headshake** | Negation | Horizontal frequency oscillation (x-axis) of the nose point relative to a stable shoulder baseline | Pose: 0 (nose), 11, 12 |
+| **Shoulder shrug** | Uncertainty / indifference | Compression of vertical distance (y-axis) between acromion (shoulder) and auditory (ear) landmarks | Pose: 11, 12, 7, 8 (ears) |
 | **Forward lean** | Emphasis / topic shift | Depth (z-axis) delta between the shoulder plane and the hip plane exceeds threshold | Pose: 11, 12, 23, 24 |
-| **Body tilt** | Comparison / contrast | Angular displacement of the shoulder line relative to the horizontal plane | Pose: 11, 12 |
+| **Body tilt** | Comparison / contrast | Angular displacement of the shoulder line relative to the signer's neutral posture | Pose: 11, 12 |
 
 ### 5.3 Rule Contract
 
 Each rule is a pure function over a landmark window — no I/O, no device, no model. This is what makes them unit-testable with fixed arrays.
+
+Two conditions apply to every rule.
+
+**A landmark the model could not see is not measured.** MediaPipe reports a visibility score per pose landmark, and a point outside the frame is extrapolated rather than observed. A head-and-shoulders framing puts the hips out of frame — measured at a visibility of 0.001 on a real capture — and `forward_lean`, which is nothing but shoulder-to-hip depth, produced twelve confident tags from coordinates the model had invented. Each rule now declines to produce a signal when a landmark it depends on falls below `minVisibility`, which is part of the threshold profile and therefore retunable like the rest.
+
+**Every rule measures against the signer's own neutral**, `body_tilt` included. It previously compared an absolute shoulder angle to a fixed threshold, which tags an entire session for any signer who does not sit square to a camera — and a phone on a stand is never square. The neutral shoulder angle on a real capture was 0.245 radians, about fourteen degrees.
 
 Before any rule runs, the sequence is rescaled so that a unit on the x axis and a unit on the y axis are the same physical length, using the aspect ratio each frame carries (§4.5). Every rule below compares a vertical measure against shoulder width, which is horizontal, and those two are not comparable in raw normalized coordinates. `body_tilt` is the clearest case: it takes the angle of the shoulder line, and an angle computed from two differently scaled components is not an angle.
 
