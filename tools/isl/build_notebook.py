@@ -80,21 +80,55 @@ print("repo :", REPO)
 print("drive:", DRIVE)
 '''
 
-CELL_AUTH = '''#@title Authenticate — Hugging Face token from Colab Secrets
-from google.colab import userdata
+CELL_AUTH = '''#@title Authenticate — token from Colab Secrets, or prompted
+import getpass
+import os
 
+# Colab Secrets when the notebook runs in the Colab web UI. The VS Code Colab
+# extension gives a Colab *kernel* without that panel, so fall back to an
+# environment variable and then to a hidden prompt. All three keep the token out
+# of the notebook file - typing it into a cell would persist it in the .ipynb and
+# then into git.
+HF_TOKEN = None
 try:
+    from google.colab import userdata
+
     HF_TOKEN = userdata.get("HF_TOKEN")
-except Exception as error:
+    print("token: Colab Secrets")
+except Exception:
+    HF_TOKEN = os.environ.get("HF_TOKEN")
+    if HF_TOKEN:
+        print("token: HF_TOKEN environment variable")
+    else:
+        HF_TOKEN = getpass.getpass("Hugging Face read token (input hidden): ").strip()
+        print("token: entered at the prompt")
+
+if not HF_TOKEN:
     raise SystemExit(
-        "Add a Hugging Face read token as the Colab secret HF_TOKEN, with "
-        "notebook access enabled, then re-run. It is deliberately not stored in "
-        f"this notebook. ({error})"
+        "No token. Either add it as the Colab secret HF_TOKEN with notebook "
+        "access enabled, set the HF_TOKEN environment variable, or paste it at "
+        "the prompt. Do not put it in a cell."
     )
 
 HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 REPO_ID = "Exploration-Lab/iSign"
-print("token loaded from Colab Secrets")
+
+# Fail here, with a reason, rather than at the archive cell twenty minutes in.
+import requests as _requests
+
+_probe = _requests.get(
+    f"https://huggingface.co/api/datasets/{REPO_ID}", headers=HEADERS, timeout=30
+)
+if _probe.status_code == 401:
+    raise SystemExit("Token rejected (401). Check it is a valid read token.")
+if _probe.status_code == 403:
+    raise SystemExit(
+        f"Token is valid but access is denied (403). Accept the terms at "
+        f"https://huggingface.co/datasets/{REPO_ID} using the same account the "
+        "token belongs to, then re-run."
+    )
+_probe.raise_for_status()
+print(f"authenticated, {REPO_ID} is accessible")
 '''
 
 CELL_TRIAGE = '''#@title Triage — which rows are continuous, and on what evidence
