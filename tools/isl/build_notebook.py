@@ -189,16 +189,23 @@ print("accuracy cell at the end. This is what lets the write-up say samples were
 print("excluded by reproducible corpus identifiers rather than by appearance.")
 '''
 
-CELL_SELECT = '''#@title Select the smoke-test clips — stratified, not the first N
+CELL_SELECT = '''#@title Select the clips — stratified, not the first N
+# 30 for a smoke test; 15000 for the RQ4 pre-training corpus. Raising this is
+# safe at any time: the manifest skips whatever is already done, so a larger
+# number extends the corpus rather than reprocessing it.
 SMOKE_CLIPS = 30  #@param {type:"integer"}
 VERIFICATION_JSON = 3  #@param {type:"integer"}
 
 selected = triage.stratified_sample(continuous, SMOKE_CLIPS)
 json_uids = [row.uid for row in selected[:VERIFICATION_JSON]]
 
-from collections import Counter
-print(f"selected {len(selected)} clips: {dict(Counter(r.source for r in selected))}")
+videos = {row.video_id for row in selected}
+print(f"selected {len(selected)} clips from {len(videos)} distinct source videos")
 print(f"of which {len(json_uids)} also written as JSON for the equivalence check")
+if len(videos) < min(len(selected), 10):
+    # The first real run drew all thirty clips from two videos, and every
+    # measurement taken from it described those two recordings.
+    print("  Few source videos for this many clips - measurements may not generalise.")
 # Taking the head of the file would sample one channel, one signer and one
 # recording setup, and every number measured from it would generalise to nothing.
 '''
@@ -239,10 +246,17 @@ print(f"manifest: {len(manifest)} recorded, {len(manifest.done())} done")
 def fetch(row):
     return archive.read(by_stem[row.uid])
 
+todo = manifest.pending([r.uid for r in selected], retry_failed=RETRY_FAILED)
+print(f"{len(todo)} to process, {len(selected) - len(todo)} already done")
+if len(todo) > 200:
+    print("Long run: enable Runtime > Background execution so a closed tab does "
+          "not end it. A disconnect costs only the clip in flight either way.")
+
 started = time.perf_counter()
 reports = smoke.run_batch(
     selected, fetch, DRIVE / "sequences", manifest,
     json_uids=json_uids, prefer_gpu=PREFER_GPU, retry_failed=RETRY_FAILED,
+    progress_every=50,
 )
 elapsed = time.perf_counter() - started
 

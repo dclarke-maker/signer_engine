@@ -112,6 +112,7 @@ def run_batch(
     json_uids: Sequence[str] = (),
     prefer_gpu: bool = False,
     retry_failed: bool = False,
+    progress_every: int = 0,
 ) -> list[dict[str, Any]]:
     """Process what is not already done, recording each outcome as it lands.
 
@@ -121,6 +122,8 @@ def run_batch(
     """
     pending = set(manifest.pending([row.uid for row in rows], retry_failed=retry_failed))
     reports: list[dict[str, Any]] = []
+    started = time.perf_counter()
+    seen = 0
 
     for row in rows:
         if row.uid not in pending:
@@ -144,6 +147,17 @@ def run_batch(
             continue
         manifest.record_done(result.uid, result.npz_path, result.report)
         reports.append(result.report)
+
+        # A corpus run is hours long; silence is indistinguishable from a hang.
+        seen += 1
+        if progress_every and seen % progress_every == 0:
+            rate = seen / max(time.perf_counter() - started, 1e-9)
+            remaining = (len(pending) - seen) / rate if rate else 0
+            print(
+                f"  {seen}/{len(pending)} clips, {rate * 60:.1f}/min, "
+                f"~{remaining / 3600:.1f}h left",
+                flush=True,
+            )
 
     return reports
 
