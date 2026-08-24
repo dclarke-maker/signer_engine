@@ -41,11 +41,13 @@ class ClipResult:
 
 
 def peak_rss_mb() -> float:
-    """Peak resident memory of this process and everything it forked.
+    """Peak resident memory of this process and everything it has forked.
 
-    Worker count is bound by memory before it is bound by CPU: MediaPipe holds a
-    model per process, so four workers can be slower than two and still fit, or
-    faster and not fit. Both numbers have to be measured.
+    ru_maxrss is a **high-water mark that never falls**, so this is cumulative
+    across the whole session, not a reading for one run. `benchmark_workers`
+    reports the increase it observes rather than this raw value - taking the
+    number directly made every worker count report an identical figure, which
+    is exactly what the first real run produced.
     """
     scale = 1024 * 1024 if os.uname().sysname == "Darwin" else 1024
     own = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -170,6 +172,9 @@ def benchmark_workers(
     for count in counts:
         started = time.perf_counter()
         before = peak_rss_mb()
+        # Children are reaped between runs, so the child high-water mark is the
+        # closest thing to a per-run reading available from rusage.
+        child_before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
         payload = [(uid, path, str(out_dir), prefer_gpu) for uid, path in clip_paths]
 
         if count == 1:
@@ -186,7 +191,20 @@ def benchmark_workers(
                 "frames": int(sum(frames)),
                 "seconds": elapsed,
                 "frames_per_second": sum(frames) / elapsed if elapsed else 0.0,
-                "peak_rss_mb": max(before, peak_rss_mb()),
+                "peak_rss_mb": peak_rss_mb(),
+                # What this run added on top of the session high-water mark.
+                # The absolute figure is cumulative and identical across runs.
+                "peak_rss_delta_mb": max(0.0, peak_rss_mb() - before),
+                "child_peak_rss_mb": (
+                    resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+                    / (1024 * 1024 if os.uname().sysname == "Darwin" else 1024)
+                ),
+                "child_peak_delta_mb": max(
+                    0.0,
+                    (resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss - child_before)
+                    / (1024 * 1024 if os.uname().sysname == "Darwin" else 1024),
+                ),
+                "cpu_count": os.cpu_count(),
             }
         )
     return out

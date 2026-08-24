@@ -8,9 +8,12 @@ be demonstrated from the data rather than assumed.
 **Translation word count is deliberately not a criterion.** An isolated sign can
 carry a multi-word English gloss and a continuous utterance can translate to a
 single word, so a length threshold would misclassify in both directions and leave
-no defensible statement about what was excluded. Selection is derived from corpus
-identifiers - the UID structure, the release a row came from, and the source
-attribution - and audited by hand before anything is scaled up.
+no defensible statement about what was excluded.
+
+The criterion is the **release**: `iSign_v1.1.csv` is the Task 1 translation set
+and CISLR ships separately, so membership is what marks a row as continuous.
+Source attribution is stratification metadata only - it decides which clips to
+sample, never which are eligible. Audited by hand before anything scales up.
 
 The aim is to be able to write "excluded according to reproducible corpus
 identifiers", not "excluded samples that looked isolated".
@@ -138,7 +141,10 @@ def load_rows(csv_path: Path) -> tuple[list[Row], TriageReport]:
         )
     if by_source.get("unknown", 0):
         notes.append(
-            f"{by_source['unknown']} rows have no identifiable source."
+            f"{by_source['unknown']} of {len(rows)} rows have no identifiable "
+            "source channel. This does not affect eligibility - the release is "
+            "the corpus identifier - but it does mean the sample is stratified "
+            "over one group, so the manual audit carries the whole argument."
         )
 
     report = TriageReport(
@@ -149,7 +155,8 @@ def load_rows(csv_path: Path) -> tuple[list[Row], TriageReport]:
         total_rows=len(rows),
         with_sequence_number=with_sequence,
         by_source=dict(by_source),
-        # "Unambiguous" means the release told us, rather than us inferring.
+        # Whether the release told us the channel, rather than us inferring it.
+        # Eligibility does not depend on this; stratification does.
         unambiguous=source_column is not None and with_sequence > 0,
         notes=notes,
     )
@@ -159,17 +166,26 @@ def load_rows(csv_path: Path) -> tuple[list[Row], TriageReport]:
 def select_continuous(rows: Iterable[Row]) -> tuple[list[Row], list[tuple[Row, str]]]:
     """Split rows into continuous and excluded-with-a-reason.
 
-    Every exclusion carries the identifier that justified it, so the exclusion
-    list is auditable line by line.
+    **The corpus identifier is the release itself.** CISLR - the isolated-sign
+    set - is iSign's Task 3 and ships as a separate download; `iSign_v1.1.csv`
+    is the Task 1 translation release, so membership in this file is what marks
+    a row as continuous sentence or phrase material. That is the reproducible
+    criterion, and it is why translation word count is not used.
+
+    Rows are dropped only for being unusable: no translation to pair the video
+    with, or no segment position in the UID.
+
+    Source attribution is **not** a criterion. An earlier version excluded rows
+    whose channel could not be identified, which threw away 127,200 of 127,237
+    rows on the first real run - the release carries no source column, so
+    "unknown" is the normal case, not a defect. Source is stratification
+    metadata; it decides which clips to sample, never which clips are eligible.
     """
     keep: list[Row] = []
     dropped: list[tuple[Row, str]] = []
     for row in rows:
         if not row.text:
             dropped.append((row, "no translation text"))
-            continue
-        if row.source == "unknown":
-            dropped.append((row, "source could not be identified"))
             continue
         if not row.has_sequence_number:
             dropped.append((row, "UID carries no segment position"))

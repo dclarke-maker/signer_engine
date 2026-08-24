@@ -85,13 +85,15 @@ def check_sequence(sequence: LandmarkSequence, uid: str) -> ValidationReport:
     report.add("timestamps:rebased", float(sequence.t_ms[0]) == 0.0)
 
     # An absent stream must be marked absent, not filled with zeros that read as
-    # coordinates at the origin.
+    # coordinates at the origin. Coordinates only: face visibility is a constant
+    # the loader reconstructs for every row, present or not, so including it
+    # here reported a false failure on any clip that lost the face mid-way.
     zero_rows = {}
     for i, name in enumerate(STREAM_ORDER):
         arr = sequence.stream(name)
         absent = ~sequence.present[:, i]
         if absent.any():
-            zero_rows[name] = bool(np.all(arr[absent] == 0))
+            zero_rows[name] = bool(np.all(arr[absent][..., :3] == 0))
     report.add("absent-streams-are-not-coordinates", all(zero_rows.values()) if zero_rows else True,
                zero_rows)
 
