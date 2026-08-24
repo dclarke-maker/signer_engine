@@ -1,5 +1,6 @@
 package com.app.signlanguagemobile.holistic
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.util.Log
@@ -45,9 +46,16 @@ import java.nio.ByteOrder
  * Nothing here retains, encodes, or writes a frame.
  */
 class HolisticFrameProcessorPlugin(
-  private val proxy: VisionCameraProxy,
+  context: Context,
   options: Map<String, Any>?,
 ) : FrameProcessorPlugin() {
+
+  /**
+   * How VisionCamera constructs it. The primary constructor takes a plain
+   * Context so the extraction path can be exercised by an instrumented test
+   * without a camera session - see HolisticEquivalenceTest.
+   */
+  constructor(proxy: VisionCameraProxy, options: Map<String, Any>?) : this(proxy.context, options)
 
   private companion object {
     const val TAG = "HolisticPlugin"
@@ -66,9 +74,9 @@ class HolisticFrameProcessorPlugin(
    * landmarker null and every frame silently returning nothing, so CPU is tried
    * before giving up, and whichever succeeded is logged.
    */
-  private val landmarker: HolisticLandmarker? = createLandmarker(proxy)
+  private val landmarker: HolisticLandmarker? = createLandmarker(context)
 
-  private fun createLandmarker(proxy: VisionCameraProxy): HolisticLandmarker? {
+  private fun createLandmarker(context: Context): HolisticLandmarker? {
     for (delegate in listOf(Delegate.GPU, Delegate.CPU)) {
       try {
         val base = BaseOptions.builder()
@@ -82,7 +90,7 @@ class HolisticFrameProcessorPlugin(
           .setOutputFaceBlendshapes(false)
           .setOutputPoseSegmentationMasks(false)
           .build()
-        val created = HolisticLandmarker.createFromOptions(proxy.context, opts)
+        val created = HolisticLandmarker.createFromOptions(context, opts)
         Log.i(TAG, "HolisticLandmarker ready on $delegate")
         return created
       } catch (e: Throwable) {
@@ -121,9 +129,6 @@ class HolisticFrameProcessorPlugin(
    */
   private var framesSeen = 0L
 
-  /** Width / height of the last upright bitmap; travels in the packed header. */
-  private var uprightAspect = 1f
-
   private fun nextTimestampMs(): Long {
     val now = SystemClock.elapsedRealtime()
     if (baseTimestampMs < 0) baseTimestampMs = now
@@ -133,21 +138,63 @@ class HolisticFrameProcessorPlugin(
   }
 
   override fun callback(frame: Frame, arguments: Map<String, Any>?): Any? {
-    val detector = landmarker ?: return null
-    val timestampMs = nextTimestampMs()
-
-    val result: HolisticLandmarkerResult = try {
+    val bitmap = try {
       // frame.imageProxy is a CameraX type this module does not have on its
       // compile classpath, and ImageProxy.toBitmap() is not available in every
       // CameraX version. frame.image is android.media.Image - a framework class
       // - so it needs no extra dependency. The camera is configured for RGBA
       // output (pixelFormat="rgb" in LandmarkCamera), so plane 0 can be copied
       // straight into a bitmap without a YUV conversion.
-      val bitmap = frame.image.toArgbBitmap(frame.uprightRotationDegrees()) ?: return null
-      // Measured on the upright bitmap, not the sensor frame: rotating swaps
-      // width and height, and the landmarks are normalised against this one.
-      uprightAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-      detector.detectForVideo(BitmapImageBuilder(bitmap).build(), timestampMs)
+      frame.image.toArgbBitmap() ?: return null
+    } catch (e: Throwable) {
+      Log.w(TAG, "could not read one frame into a bitmap", e)
+      return null
+    }
+    return detectAndPack(
+      bitmap,
+      rotationDegrees = frame.uprightRotationDegrees(),
+      timestampMs = nextTimestampMs(),
+      mirrored = frame.isMirrored,
+      recycleSource = true,
+    )
+  }
+
+  /**
+   * Detection and packing, without a VisionCamera Frame.
+   *
+   * Split out so the same bitmaps can be put through this code and through the
+   * offline Python extractor and the two compared - see
+   * docs/isl-preprocessing-contract.md §11. Loading the same .task file proves
+   * the weights match; it says nothing about image conversion, rotation, API
+   * version or delegate behaviour, and those are what silently move landmarks.
+   *
+   * Behaviour is identical to what `callback` did inline. `bitmap` is the
+   * unrotated source; rotation is applied here so the test exercises it.
+   */
+  @JvmOverloads
+  fun detectAndPack(
+    bitmap: Bitmap,
+    rotationDegrees: Int,
+    timestampMs: Long,
+    mirrored: Boolean,
+    /**
+     * Release `bitmap` once it has been rotated. True from `callback`, which
+     * just allocated it and would otherwise leave a full-resolution ARGB_8888
+     * bitmap per frame for the collector - tens of megabytes a second at 30fps.
+     * False by default so a caller that owns its bitmap keeps it.
+     */
+    recycleSource: Boolean = false,
+  ): String? {
+    val detector = landmarker ?: return null
+
+    val upright = bitmap.rotated(rotationDegrees)
+    if (recycleSource && upright !== bitmap) bitmap.recycle()
+    // Measured on the upright bitmap, not the source: rotating swaps width and
+    // height, and the landmarks are normalised against this one.
+    val aspect = upright.width.toFloat() / upright.height.toFloat()
+
+    val result: HolisticLandmarkerResult = try {
+      detector.detectForVideo(BitmapImageBuilder(upright).build(), timestampMs)
     } catch (e: Throwable) {
       Log.w(TAG, "holistic detection failed for one frame", e)
       return null
@@ -164,29 +211,26 @@ class HolisticFrameProcessorPlugin(
     if (framesSeen == 1L || framesSeen % 30 == 0L) {
       Log.i(
         TAG,
-        "frame $framesSeen: ${frame.image.width}x${frame.image.height} " +
-          "rot=${frame.uprightRotationDegrees()} aspect=$uprightAspect " +
-          "mirrored=${frame.isMirrored} " +
+        "frame $framesSeen: ${upright.width}x${upright.height} " +
+          "rot=$rotationDegrees aspect=$aspect mirrored=$mirrored " +
           "face=${streams[0].size} pose=${streams[1].size} " +
           "left=${streams[2].size} right=${streams[3].size}",
       )
     }
 
     val totalFloats = HEADER_FLOATS + streams.sumOf { it.size } * FLOATS_PER_LANDMARK
-    val byteCount = totalFloats * BYTES_PER_FLOAT
-
-    val bytes = ByteArray(byteCount)
+    val bytes = ByteArray(totalFloats * BYTES_PER_FLOAT)
     val buffer: ByteBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
     val floats = buffer.asFloatBuffer()
 
     floats.put(0, SCHEMA_VERSION)
     floats.put(1, timestampMs.toFloat())
     streams.forEachIndexed { i, stream -> floats.put(2 + i, stream.size.toFloat()) }
-    floats.put(6, uprightAspect)
+    floats.put(6, aspect)
     // Read from the frame, not assumed: MediaPipe names hands anatomically, so
     // the labels are only wrong when the pixels are actually flipped, and
     // whether a front camera's analysis buffer is flipped is a platform detail.
-    floats.put(7, if (frame.isMirrored) 1f else 0f)
+    floats.put(7, if (mirrored) 1f else 0f)
 
     var offset = HEADER_FLOATS
     for (stream in streams) {
@@ -228,7 +272,10 @@ class HolisticFrameProcessorPlugin(
     }
 
   /**
-   * Copies an RGBA frame into an ARGB_8888 bitmap, turned upright.
+   * Copies an RGBA frame into an ARGB_8888 bitmap.
+   *
+   * Rotation is applied by `detectAndPack`, not here, so that the same seam can
+   * be driven from a test with an ordinary bitmap.
    *
    * Rows can be padded, so a plane whose stride exceeds width * 4 is copied row
    * by row rather than in one block - copying the padding straight through
@@ -240,7 +287,7 @@ class HolisticFrameProcessorPlugin(
    * that when reading the buffer, and flipping the pixels too would put it
    * back.
    */
-  private fun Image.toArgbBitmap(rotationDegrees: Int): Bitmap? {
+  private fun Image.toArgbBitmap(): Bitmap? {
     val plane = planes.firstOrNull() ?: return null
     val buffer = plane.buffer.also { it.rewind() }
     val rowStride = plane.rowStride
@@ -249,7 +296,7 @@ class HolisticFrameProcessorPlugin(
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     if (rowStride == tightStride) {
       bitmap.copyPixelsFromBuffer(buffer)
-      return bitmap.rotated(rotationDegrees)
+      return bitmap
     }
 
     val packed = ByteBuffer.allocateDirect(tightStride * height).order(ByteOrder.nativeOrder())
@@ -261,20 +308,19 @@ class HolisticFrameProcessorPlugin(
     }
     packed.rewind()
     bitmap.copyPixelsFromBuffer(packed)
-    return bitmap.rotated(rotationDegrees)
+    return bitmap
   }
 
   /**
-   * Rotation allocates a second bitmap, so the source is released rather than
-   * left for the collector - at 30fps a full-resolution ARGB_8888 bitmap per
-   * frame is tens of megabytes a second of garbage. createBitmap copies the
-   * pixels, so recycling the source afterwards is safe.
+   * Returns a rotated copy, or the same bitmap when there is nothing to do.
+   *
+   * Deliberately does not recycle the source: whether that is safe depends on
+   * who allocated it, which only the caller knows. `detectAndPack` decides via
+   * `recycleSource`.
    */
-  private fun Bitmap.rotated(degrees: Int): Bitmap {
+  internal fun Bitmap.rotated(degrees: Int): Bitmap {
     if (degrees == 0) return this
     val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-    val rotated = Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
-    if (rotated !== this) recycle()
-    return rotated
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
   }
 }

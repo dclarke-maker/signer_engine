@@ -86,3 +86,8 @@ Thumbs.db
 # ISL preprocessing scratch (outputs belong on Drive, not in the repo)
 tools/isl/**/__pycache__/
 .pytest_cache/
+
+# Cross-runtime equivalence frames: generated locally, never committed.
+# iSign clips are CC-BY-NC-SA (redistribution) and the frames show a person.
+tools/isl/fixtures/frames/
+tools/isl/fixtures/*.json

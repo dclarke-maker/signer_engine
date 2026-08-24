@@ -20,9 +20,18 @@ const {
  * then silently detects nothing.
  */
 const MODEL_FILE = "holistic_landmarker.task";
+/**
+ * Frames for the cross-runtime equivalence test. Generated locally by
+ * tools/isl/make_frames.py and never committed: an iSign clip is CC-BY-NC-SA,
+ * and the frames show a person. Absent is the normal state - the instrumented
+ * test is simply not runnable until someone generates them.
+ */
+const FIXTURE_DIR = ["tools", "isl", "fixtures", "frames"];
 const IOS_POD = "MediaPipeTasksVision";
 const IOS_POD_VERSION = "~> 0.10.14";
 const ANDROID_DEP = "com.google.mediapipe:tasks-vision:0.10.14";
+const ANDROID_TEST_RUNNER = "androidx.test:runner:1.5.2";
+const ANDROID_TEST_JUNIT = "androidx.test.ext:junit:1.1.5";
 
 const SOURCE_ROOT = (projectRoot) => path.join(projectRoot, "native", "holistic");
 
@@ -130,17 +139,52 @@ const withAndroidSources = (config) =>
         "holistic",
       );
 
-      copyInto(
-        fs.readdirSync(androidSource).map((f) => path.join(androidSource, f)),
-        target,
-      );
+      // Test sources must not land in the main source set: they import
+      // androidx.test and junit, which are not on the main classpath, and the
+      // app would stop compiling.
+      const sources = fs
+        .readdirSync(androidSource)
+        .filter((f) => !f.endsWith("Test.kt"))
+        .map((f) => path.join(androidSource, f));
+      copyInto(sources, target);
 
       const assets = path.join(cfg.modRequest.platformProjectRoot, "app", "src", "main", "assets");
       fs.mkdirSync(assets, { recursive: true });
       fs.copyFileSync(requireModel(projectRoot), path.join(assets, MODEL_FILE));
+
+      copyInstrumentedTest(cfg, projectRoot, pkgPath);
       return cfg;
     },
   ]);
+
+/**
+ * Android: place the cross-runtime equivalence test and its frames.
+ *
+ * The test goes in androidTest, and the frames go in the *test* APK's assets -
+ * a separate asset manager from the app's, which is why the test reads them
+ * through the instrumentation context rather than the target context.
+ */
+function copyInstrumentedTest(cfg, projectRoot, pkgPath) {
+  const androidSource = path.join(SOURCE_ROOT(projectRoot), "android");
+  const tests = fs
+    .readdirSync(androidSource)
+    .filter((f) => f.endsWith("Test.kt"))
+    .map((f) => path.join(androidSource, f));
+  if (tests.length === 0) return;
+
+  const testRoot = path.join(cfg.modRequest.platformProjectRoot, "app", "src", "androidTest");
+  copyInto(tests, path.join(testRoot, "java", ...pkgPath, "holistic"));
+
+  const frames = path.join(projectRoot, ...FIXTURE_DIR);
+  if (!fs.existsSync(frames)) return;
+  const pngs = fs
+    .readdirSync(frames)
+    .filter((f) => f.endsWith(".png"))
+    .map((f) => path.join(frames, f));
+  if (pngs.length > 0) {
+    copyInto(pngs, path.join(testRoot, "assets", "holistic-fixtures"));
+  }
+}
 
 /** Android: add the MediaPipe dependency and stop the model being compressed. */
 const withAndroidGradle = (config) =>
@@ -151,6 +195,21 @@ const withAndroidGradle = (config) =>
       contents = contents.replace(
         /dependencies\s?{/,
         `dependencies {\n    implementation '${ANDROID_DEP}'`,
+      );
+    }
+    // Only needed to run the equivalence harness; they add nothing to the
+    // shipped APK.
+    if (!contents.includes(ANDROID_TEST_RUNNER)) {
+      contents = contents.replace(
+        /dependencies\s?{/,
+        `dependencies {\n    androidTestImplementation '${ANDROID_TEST_RUNNER}'` +
+          `\n    androidTestImplementation '${ANDROID_TEST_JUNIT}'`,
+      );
+    }
+    if (!contents.includes("testInstrumentationRunner")) {
+      contents = contents.replace(
+        /defaultConfig\s?{/,
+        'defaultConfig {\n        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"',
       );
     }
     // MediaPipe memory-maps the model; a compressed asset cannot be mapped.
