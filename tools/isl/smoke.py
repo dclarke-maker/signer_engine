@@ -145,7 +145,7 @@ def run_batch(
     prefer_gpu: bool = False,
     retry_failed: bool = False,
     progress_every: int = 0,
-    workers: int = 1,
+    workers: int = 0,
     fetch_factory: Callable[[], Callable[[Row], bytes]] | None = None,
     fetch_workers: int = 8,
 ) -> list[dict[str, Any]]:
@@ -156,10 +156,14 @@ def run_batch(
     HTTP, which is neither picklable nor safe to share between processes, while
     MediaPipe is pure CPU and is the part worth parallelising.
 
-    `workers=1` runs everything inline, which is what the smoke test wants - a
-    correctness pass whose timings are not confounded by pool overhead. A corpus
-    run wants the cores: at one process this managed 3.3 clips a minute, or 64
-    hours for 15,000 clips, on a machine with 48 of them idle.
+    `workers` defaults to the cores available, minus one. The default lives here
+    rather than in the notebook on purpose: a notebook's cell source is fixed
+    when Colab opens it and is *not* updated by the setup cell's git pull, so a
+    caller written before this argument existed would otherwise keep running
+    single-process no matter how many times the repo was pulled. That is exactly
+    what happened - the parallel code sat unused in the repo for a whole run.
+    Pass `workers=1` to force everything inline, which is what the smoke test
+    wants: a correctness pass whose timings are not confounded by pool overhead.
 
     Fetching is then the next ceiling, and it is not CPU work - it is a byte
     range over HTTP, so it wants threads rather than processes. Parallelising
@@ -169,6 +173,9 @@ def run_batch(
     archive reader holds one position and one cache and cannot be shared.
     Without it, fetching stays serial and `fetch` is used as-is.
     """
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 1)
+
     pending = set(manifest.pending([row.uid for row in rows], retry_failed=retry_failed))
     todo = [r for r in rows if r.uid in pending]
     wanted_json = set(json_uids)
@@ -201,7 +208,7 @@ def run_batch(
                 flush=True,
             )
 
-    if workers <= 1:
+    if workers <= 1 or not todo:
         for row in todo:
             try:
                 uid, report, error = _process_payload(payload_for(row))
