@@ -154,3 +154,33 @@ def motion_preserved(
         "path_length_after": float(after.sum()),
         "path_retained": float(after.sum() / before.sum()) if before.sum() else 0.0,
     }
+
+
+def eligible_at_rate(
+    records: Sequence[dict[str, Any]], target_fps: float = DEFAULT_TARGET_FPS
+) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], str]]]:
+    """Split clips into those that can reach the model input rate and those that cannot.
+
+    A clip slower than the target cannot fill it without repeating frames, and a
+    repeated frame reads as stillness that was never recorded. Dropping those is
+    honest; upsampling them is not, and a model trained on invented motion is
+    partly learning the interpolator.
+
+    This is a **model-input** decision, like the rest of this module. Extraction
+    keeps every clip at its own rate, so raising or lowering the target later
+    changes what is eligible without re-extracting anything.
+
+    On the 15,022-clip iSign corpus this excluded 4 clips, all segments of one
+    12fps recording.
+    """
+    keep: list[dict[str, Any]] = []
+    dropped: list[tuple[dict[str, Any], str]] = []
+    for record in records:
+        fps = float(record.get("source_fps") or 0)
+        if fps <= 0:
+            dropped.append((record, "no source frame rate"))
+        elif fps < target_fps:
+            dropped.append((record, f"{fps:.1f}fps is below the {target_fps:.0f}fps target"))
+        else:
+            keep.append(record)
+    return keep, dropped

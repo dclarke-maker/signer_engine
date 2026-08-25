@@ -210,3 +210,29 @@ class TestTemporal:
 
         assert out.present.shape[1] == len(STREAM_ORDER)
         assert out.face.shape[1] == sequence.face.shape[1]
+
+
+class TestRateEligibility:
+    def test_drops_clips_that_cannot_reach_the_model_input_rate(self):
+        from tools.isl.temporal import eligible_at_rate
+
+        records = [
+            {"uid": "ok", "source_fps": 29.97},
+            {"uid": "edge", "source_fps": 20.0},
+            {"uid": "slow", "source_fps": 12.0},
+            {"uid": "unknown", "source_fps": 0},
+        ]
+        keep, dropped = eligible_at_rate(records, 20.0)
+
+        # 20fps exactly is fine: it needs no frames invented.
+        assert [r["uid"] for r in keep] == ["ok", "edge"]
+        assert [r["uid"] for r, _ in dropped] == ["slow", "unknown"]
+        assert "below the 20fps target" in dropped[0][1]
+
+    def test_the_target_is_a_parameter_not_a_constant(self):
+        from tools.isl.temporal import eligible_at_rate
+
+        records = [{"uid": "a", "source_fps": 25.0}]
+        assert len(eligible_at_rate(records, 20.0)[0]) == 1
+        # Raising the target past the source excludes it, without re-extracting.
+        assert len(eligible_at_rate(records, 30.0)[0]) == 0

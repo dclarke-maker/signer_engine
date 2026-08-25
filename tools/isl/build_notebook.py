@@ -423,6 +423,49 @@ print(f"\\nwrote {out}")
 print("Send this file, the manifest, and a couple of .npz/.json pairs back.")
 '''
 
+CELL_EQUIV = '''#@title Export equivalence frames — for the Android/Python cross-runtime check
+# The Kotlin extractor and this one load the same .task file, which settles the
+# weights and nothing else: image conversion, rotation, MediaPipe version and
+# delegate can all still move landmarks. Colab has mediapipe 1.0.1 here; the
+# Android plugin pins 0.10.14.
+#
+# Frames go to Drive rather than the repo. An iSign clip is CC-BY-NC-SA, so
+# committing frames would be redistribution, and they show a person.
+EQUIV_CLIPS = 2  #@param {type:"integer"}
+FRAMES_PER_CLIP = 4  #@param {type:"integer"}
+
+import cv2, numpy as np
+frames_dir = DRIVE / "equivalence-frames"
+frames_dir.mkdir(parents=True, exist_ok=True)
+
+written = 0
+for row in selected[:EQUIV_CLIPS]:
+    raw = archive.read(by_stem[row.uid])
+    tmp = Path("/content") / f"{row.uid}.mp4"
+    tmp.write_bytes(raw)
+    cap = cv2.VideoCapture(str(tmp))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+    step = max(1, total // (FRAMES_PER_CLIP + 1))
+    for i in range(FRAMES_PER_CLIP):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, step * (i + 1))
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        stem = f"{row.uid}_{i:02d}"
+        cv2.imwrite(str(frames_dir / f"{stem}_upright.png"), frame)
+        # Counter-clockwise, so the plugin's 90-degree clockwise rotation puts
+        # it back. Rotation and post-rotation aspect are the paths that broke on
+        # NSL, and upright-only frames would leave both untested.
+        cv2.imwrite(str(frames_dir / f"{stem}_rot90.png"),
+                    cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE))
+        written += 2
+    cap.release()
+    tmp.unlink(missing_ok=True)
+
+print(f"wrote {written} frames to {frames_dir}")
+print("They sync to Drive; the Android instrumented test reads the same images.")
+'''
+
 CELL_ACCURACY = '''#@title Triage accuracy — run after filling in the audit sheet
 import csv as _csv
 
@@ -487,7 +530,9 @@ def notebook() -> dict:
             code(CELL_WORKERS),
             md("## 7. What the full run would cost\n"),
             code(CELL_REPORT),
-            md("## 8. Triage accuracy — after the audit sheet is filled in\n"),
+            md("## 8. Cross-runtime equivalence frames\n"),
+            code(CELL_EQUIV),
+            md("## 9. Triage accuracy — after the audit sheet is filled in\n"),
             code(CELL_ACCURACY),
         ],
     }
