@@ -268,8 +268,12 @@ def open_reader():
 todo = manifest.pending([r.uid for r in selected], retry_failed=RETRY_FAILED)
 print(f"{len(todo)} to process, {len(selected) - len(todo)} already done")
 if len(todo) > 200:
-    print("Long run: enable Runtime > Background execution so a closed tab does "
-          "not end it. A disconnect costs only the clip in flight either way.")
+    # Pro+ is meant to keep running for up to 24h after the tab closes, with no
+    # setting to enable - but it is widely reported as unreliable, so do not
+    # rely on it. A disconnect costs only the clip in flight either way.
+    print("Long run: keep the tab open and the machine awake. Pro+ background "
+          "execution is automatic but unreliable; the manifest is what actually "
+          "protects you - a disconnect costs only the clip in flight.")
 
 started = time.perf_counter()
 import os
