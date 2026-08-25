@@ -19,6 +19,26 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
+#: Failures worth retrying: the network, an expired signature, a busy server.
+#: A corrupt file or an unreadable codec will fail again and should not be.
+TRANSIENT = (
+    "HTTPError", "ConnectionError", "Timeout", "ReadTimeout", "ChunkedEncodingError",
+    "SSLError", "IncompleteRead", "RemoteDisconnected", "ProtocolError",
+)
+
+
+def is_transient(error: str | None) -> bool:
+    """Whether a recorded failure is worth trying again.
+
+    An expired CDN signature answered 403 to every request after a point, and
+    14,052 clips were recorded as failed in one run. Treating those the same as
+    a corrupt video would have made the failure permanent for the whole corpus.
+    """
+    if not error:
+        return False
+    return any(name in error for name in TRANSIENT)
+
+
 @dataclass
 class Entry:
     uid: str
@@ -26,6 +46,10 @@ class Entry:
     path: str | None = None
     error: str | None = None
     detail: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def retryable(self) -> bool:
+        return self.status == "failed" and is_transient(self.error)
 
 
 class Manifest:
@@ -75,16 +99,21 @@ class Manifest:
         return [e for e in self._entries.values() if e.status == "failed"]
 
     def pending(self, uids: list[str], *, retry_failed: bool = False) -> list[str]:
-        """What still needs work. Failures are not retried unless asked for.
+        """What still needs work.
 
-        A clip that failed for a structural reason - a corrupt file, an
-        unreadable codec - will fail again, and silently retrying it every run
-        buries the signal.
+        Transient failures - the network, an expired signature - are retried by
+        default, because they say nothing about the clip. Structural ones are
+        not: a corrupt file or an unreadable codec will fail again, and
+        retrying it every run buries the signal in the throughput numbers.
+        `retry_failed` forces both.
+
+        Classification is by error text rather than a stored flag, so a manifest
+        written before this distinction existed is still read correctly.
         """
         out = []
         for uid in uids:
             entry = self._entries.get(uid)
-            if entry is None or (retry_failed and entry.status == "failed"):
+            if entry is None or entry.retryable or (retry_failed and entry.status == "failed"):
                 out.append(uid)
         return out
 
@@ -138,5 +167,6 @@ class Manifest:
             "total": len(self._entries),
             "done": len(self.done()),
             "failed": len(failures),
+            "retryable": sum(1 for e in failures if e.retryable),
             "failure_reasons": reasons,
         }

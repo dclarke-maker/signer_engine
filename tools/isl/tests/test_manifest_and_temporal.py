@@ -101,8 +101,33 @@ class TestManifest:
             "total": 3,
             "done": 1,
             "failed": 2,
+            # An unreadable codec is structural, so nothing here is retryable.
+            "retryable": 0,
             "failure_reasons": {"unreadable codec": 2},
         }
+
+    def test_a_transient_failure_retries_itself_but_a_structural_one_does_not(self, tmp_path):
+        # An expired CDN signature answered 403 to every request after a point
+        # and 14,052 clips were recorded as failed in one run. Treating that the
+        # same as a corrupt video would have made the failure permanent for the
+        # whole corpus.
+        manifest = Manifest(tmp_path / "manifest.jsonl")
+        manifest.record_failed("net", "HTTPError: 403 Client Error: Forbidden for url: ...")
+        manifest.record_failed("bad", "RuntimeError: could not open clip.mp4")
+
+        assert manifest.pending(["net", "bad"]) == ["net"]
+        assert manifest.pending(["net", "bad"], retry_failed=True) == ["net", "bad"]
+        assert manifest.summary()["retryable"] == 1
+
+    def test_classification_reads_a_manifest_written_before_the_distinction(self, tmp_path):
+        # Judged from the error text, not a stored flag, so the 14k already on
+        # Drive are picked up without editing the file.
+        path = tmp_path / "manifest.jsonl"
+        path.write_text(
+            '{"uid": "old", "status": "failed", "path": null, '
+            '"error": "HTTPError: 403 Client Error", "detail": {}}\n'
+        )
+        assert Manifest(path).pending(["old"]) == ["old"]
 
     def test_compaction_keeps_the_latest_entry_per_uid(self, tmp_path):
         path = tmp_path / "manifest.jsonl"

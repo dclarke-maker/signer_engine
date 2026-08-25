@@ -144,6 +144,58 @@ class TestSelectiveExtraction:
         # The point of the exercise: a smoke test must not pull the corpus.
         assert fetched < len(blob)
 
+    def test_an_expired_signature_is_renewed_rather_than_ending_the_run(self):
+        # Hugging Face redirects to a CDN url carrying a time-limited signature.
+        # Pinning the resolved url works until it lapses and then 403s every
+        # request - which on the first corpus run cost 14,052 clips.
+        blob = build_zip({"a.mp4": b"x" * 4096})
+        parts = split(blob, len(blob) // 2)
+
+        class ExpiringSession(FakeSession):
+            def __init__(self, blobs):
+                super().__init__(blobs)
+                self.expired = True
+                self.resolves = 0
+
+            def head(self, url, headers=None, allow_redirects=True, timeout=None):
+                # Re-resolving mints a fresh signature.
+                self.resolves += 1
+                self.expired = False
+                return super().head(url, headers, allow_redirects, timeout)
+
+            def get(self, url, headers=None, stream=False, timeout=None):
+                if self.expired:
+                    self.requests.append((url, headers["Range"]))
+                    return FakeResponse(b"", status=403, url=url)
+                return super().get(url, headers, stream, timeout)
+
+        session = ExpiringSession(parts)
+        stream = SplitRemoteFile(
+            [RemotePart("part_aa", len(parts["part_aa"]), origin="part_aa"),
+             RemotePart("part_ab", len(parts["part_ab"]), origin="part_ab")],
+            session=session,
+            window=256,
+        )
+
+        assert stream.read(100) == blob[:100]
+        assert session.resolves == 1, "should re-resolve exactly once"
+
+    def test_a_403_without_a_stable_origin_still_raises(self):
+        # Nothing to re-resolve from means the failure is real.
+        blob = build_zip({"a.mp4": b"x" * 100})
+        parts = split(blob, 50)
+
+        class Always403(FakeSession):
+            def get(self, url, headers=None, stream=False, timeout=None):
+                return FakeResponse(b"", status=403, url=url)
+
+        stream = SplitRemoteFile(
+            [RemotePart("part_aa", 50), RemotePart("part_ab", len(blob) - 50)],
+            session=Always403(parts),
+        )
+        with pytest.raises(Exception):
+            stream.read(10)
+
     def test_a_host_that_ignores_ranges_fails_loudly(self):
         from tools.isl.remote_zip import RangeUnsupported
 

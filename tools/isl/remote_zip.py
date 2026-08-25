@@ -35,8 +35,18 @@ class RangeUnsupported(RuntimeError):
 
 @dataclass
 class RemotePart:
+    """One part of the split archive.
+
+    `url` is where bytes are currently fetched from and `origin` is the stable
+    address it was resolved from. Hugging Face redirects to a CDN URL carrying a
+    time-limited signature, so pinning the resolved URL works until the
+    signature expires and then fails every request with 403 - which on the first
+    corpus run happened partway through and cost 14,052 clips.
+    """
+
     url: str
     size: int
+    origin: str | None = None
 
 
 class SplitRemoteFile(io.RawIOBase):
@@ -150,9 +160,15 @@ class SplitRemoteFile(io.RawIOBase):
         return 0
 
     def _fetch_range(self, part: RemotePart, offset: int, size: int) -> bytes:
-        headers = dict(self._headers)
-        headers["Range"] = f"bytes={offset}-{offset + size - 1}"
-        response = self._session.get(part.url, headers=headers, stream=True, timeout=60)
+        response = self._range_request(part, offset, size)
+
+        # A signed CDN URL that has expired answers 403 to a request that was
+        # valid minutes ago. Re-resolve from the stable address and try once
+        # more before treating it as a real failure.
+        if response.status_code in (401, 403) and part.origin:
+            part.url = self._resolve(part.origin)
+            response = self._range_request(part, offset, size)
+
         response.raise_for_status()
         if response.status_code != 206:
             raise RangeUnsupported(
@@ -160,6 +176,18 @@ class SplitRemoteFile(io.RawIOBase):
                 "selective extraction is not possible against this host"
             )
         return response.content
+
+    def _range_request(self, part: RemotePart, offset: int, size: int):
+        headers = dict(self._headers)
+        headers["Range"] = f"bytes={offset}-{offset + size - 1}"
+        return self._session.get(part.url, headers=headers, stream=True, timeout=60)
+
+    def _resolve(self, origin: str) -> str:
+        response = self._session.head(
+            origin, headers=self._headers, allow_redirects=True, timeout=60
+        )
+        response.raise_for_status()
+        return response.url
 
 
 def part_sizes(
@@ -177,7 +205,9 @@ def part_sizes(
         length = response.headers.get("Content-Length")
         if length is None:
             raise RangeUnsupported(f"{url} did not report Content-Length")
-        parts.append(RemotePart(url=response.url, size=int(length)))
+        # Keep the stable address alongside the resolved one so an expired
+        # signature can be renewed rather than ending the run.
+        parts.append(RemotePart(url=response.url, size=int(length), origin=url))
     return parts
 
 
