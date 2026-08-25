@@ -244,12 +244,26 @@ RETRY_FAILED = False  #@param {type:"boolean"}
 # run. At one process it managed 3.3 clips a minute; 15,000 would have taken
 # 64 hours on a machine with 48 cores idle.
 WORKERS = 0  #@param {type:"integer"}
+# Downloads are network waits, not CPU, so they want threads. With extraction
+# parallel but fetching serial, throughput stuck at 9.4 clips a minute on a
+# 48-core machine - one download after another was the whole ceiling.
+FETCH_THREADS = 8  #@param {type:"integer"}
 
 manifest = Manifest(DRIVE / "manifest.jsonl")
 print(f"manifest: {len(manifest)} recorded, {len(manifest.done())} done")
 
 def fetch(row):
     return archive.read(by_stem[row.uid])
+
+def open_reader():
+    """A fresh archive reader, for one fetch thread.
+
+    Each holds a stream position and a read cache, so they cannot be shared
+    between threads. Opening one re-reads the central directory, which is why
+    this is per-thread rather than per-clip.
+    """
+    own = open_split_zip(urls, session=requests.Session(), headers=HEADERS)
+    return lambda row: own.read(by_stem[row.uid])
 
 todo = manifest.pending([r.uid for r in selected], retry_failed=RETRY_FAILED)
 print(f"{len(todo)} to process, {len(selected) - len(todo)} already done")
@@ -260,12 +274,14 @@ if len(todo) > 200:
 started = time.perf_counter()
 import os
 workers = WORKERS or max(1, (os.cpu_count() or 2) - 1)
-print(f"{os.cpu_count()} cores, using {workers} workers")
+print(f"{os.cpu_count()} cores, using {workers} workers and {FETCH_THREADS} fetch threads")
 
 reports = smoke.run_batch(
     selected, fetch, DRIVE / "sequences", manifest,
     json_uids=json_uids, prefer_gpu=PREFER_GPU, retry_failed=RETRY_FAILED,
     progress_every=50, workers=workers,
+    fetch_factory=open_reader if workers > 1 else None,
+    fetch_workers=FETCH_THREADS,
 )
 elapsed = time.perf_counter() - started
 

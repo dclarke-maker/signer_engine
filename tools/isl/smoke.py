@@ -16,7 +16,8 @@ import os
 import resource
 import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import threading
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -103,6 +104,24 @@ def process_clip(
     )
 
 
+def _fetch_then_extract(fetch_one, row, out_dir, write_json, prefer_gpu, pool):
+    """Download on this thread, extract in a process, return the outcome.
+
+    The two halves want different concurrency: a byte range over HTTP is waiting
+    on the network and belongs on a thread, while MediaPipe is pure CPU and
+    belongs in a process.
+    """
+    try:
+        video_bytes = fetch_one(row)
+    except Exception as error:  # noqa: BLE001
+        return row.uid, None, f"{type(error).__name__}: {error}"
+    future = pool.submit(
+        _process_payload,
+        (row.uid, video_bytes, out_dir, row.text, row.source, write_json, prefer_gpu),
+    )
+    return future.result()
+
+
 def _process_payload(args) -> tuple[str, dict[str, Any] | None, str | None]:
     """Extract one clip in a worker. Returns (uid, report, error)."""
     uid, video_bytes, out_dir, text, source, write_json, prefer_gpu = args
@@ -127,6 +146,8 @@ def run_batch(
     retry_failed: bool = False,
     progress_every: int = 0,
     workers: int = 1,
+    fetch_factory: Callable[[], Callable[[Row], bytes]] | None = None,
+    fetch_workers: int = 8,
 ) -> list[dict[str, Any]]:
     """Process what is not already done, recording each outcome as it lands.
 
@@ -139,6 +160,14 @@ def run_batch(
     correctness pass whose timings are not confounded by pool overhead. A corpus
     run wants the cores: at one process this managed 3.3 clips a minute, or 64
     hours for 15,000 clips, on a machine with 48 of them idle.
+
+    Fetching is then the next ceiling, and it is not CPU work - it is a byte
+    range over HTTP, so it wants threads rather than processes. Parallelising
+    extraction alone took this from 3.3 to 9.4 clips a minute, when 47 workers
+    should have given far more; the missing time was one serial download after
+    another. `fetch_factory` supplies a fetcher per thread, because a single
+    archive reader holds one position and one cache and cannot be shared.
+    Without it, fetching stays serial and `fetch` is used as-is.
     """
     pending = set(manifest.pending([row.uid for row in rows], retry_failed=retry_failed))
     todo = [r for r in rows if r.uid in pending]
@@ -184,31 +213,52 @@ def run_batch(
     # Bounded in flight, so fetching never runs far ahead of extraction and the
     # whole corpus is not held in memory as video bytes.
     sources = {row.uid: row.source for row in todo}
+    local = threading.local()
+
+    def thread_fetch(row: Row) -> bytes:
+        """One archive reader per thread; they hold a position and a cache."""
+        if fetch_factory is None:
+            return fetch(row)
+        reader = getattr(local, "reader", None)
+        if reader is None:
+            reader = local.reader = fetch_factory()
+        return reader(row)
+
     queue = iter(todo)
-    with ProcessPoolExecutor(max_workers=workers) as pool:
-        futures: dict[Any, str] = {}
+    queue_lock = threading.Lock()
 
-        def submit_next() -> bool:
-            row = next(queue, None)
-            if row is None:
-                return False
-            try:
-                futures[pool.submit(_process_payload, payload_for(row))] = row.uid
-            except Exception as fetch_error:  # noqa: BLE001
-                record(row.uid, None, f"{type(fetch_error).__name__}: {fetch_error}", row.source)
-            return True
+    def next_row() -> Row | None:
+        with queue_lock:
+            return next(queue, None)
 
-        for _ in range(workers * 2):
-            if not submit_next():
-                break
+    fetch_pool = ThreadPoolExecutor(max_workers=max(1, fetch_workers))
+    try:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            in_flight: dict[Any, str] = {}
 
-        while futures:
-            for future in as_completed(list(futures), timeout=None):
-                futures.pop(future, None)
-                uid, report, error = future.result()
-                record(uid, report, error, sources.get(uid, ""))
-                submit_next()
-                break
+            def submit_next() -> bool:
+                row = next_row()
+                if row is None:
+                    return False
+                # Fetch on a thread, then hand the bytes to a process.
+                in_flight[fetch_pool.submit(_fetch_then_extract, thread_fetch, row,
+                                            str(out_dir), row.uid in wanted_json,
+                                            prefer_gpu, pool)] = row.uid
+                return True
+
+            for _ in range(max(workers, fetch_workers) * 2):
+                if not submit_next():
+                    break
+
+            while in_flight:
+                for future in as_completed(list(in_flight), timeout=None):
+                    in_flight.pop(future, None)
+                    uid, report, error = future.result()
+                    record(uid, report, error, sources.get(uid, ""))
+                    submit_next()
+                    break
+    finally:
+        fetch_pool.shutdown(wait=False)
 
     return reports
 
