@@ -16,7 +16,7 @@ import os
 import resource
 import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -103,6 +103,19 @@ def process_clip(
     )
 
 
+def _process_payload(args) -> tuple[str, dict[str, Any] | None, str | None]:
+    """Extract one clip in a worker. Returns (uid, report, error)."""
+    uid, video_bytes, out_dir, text, source, write_json, prefer_gpu = args
+    try:
+        result = process_clip(
+            uid, video_bytes, Path(out_dir),
+            text=text, source=source, write_json=write_json, prefer_gpu=prefer_gpu,
+        )
+    except Exception as error:  # noqa: BLE001
+        return uid, None, f"{type(error).__name__}: {error}"
+    return uid, result.report, None
+
+
 def run_batch(
     rows: Sequence[Row],
     fetch: Callable[[Row], bytes],
@@ -113,51 +126,89 @@ def run_batch(
     prefer_gpu: bool = False,
     retry_failed: bool = False,
     progress_every: int = 0,
+    workers: int = 1,
 ) -> list[dict[str, Any]]:
     """Process what is not already done, recording each outcome as it lands.
 
-    Sequential on purpose: this is the correctness pass. Throughput is measured
-    separately by `benchmark_workers`, so a slow first run does not confound the
-    numbers the corpus decision rests on.
+    Fetching stays in the parent and extraction goes to workers. That split is
+    forced rather than chosen: `fetch` closes over an open archive reading over
+    HTTP, which is neither picklable nor safe to share between processes, while
+    MediaPipe is pure CPU and is the part worth parallelising.
+
+    `workers=1` runs everything inline, which is what the smoke test wants - a
+    correctness pass whose timings are not confounded by pool overhead. A corpus
+    run wants the cores: at one process this managed 3.3 clips a minute, or 64
+    hours for 15,000 clips, on a machine with 48 of them idle.
     """
     pending = set(manifest.pending([row.uid for row in rows], retry_failed=retry_failed))
+    todo = [r for r in rows if r.uid in pending]
+    wanted_json = set(json_uids)
     reports: list[dict[str, Any]] = []
     started = time.perf_counter()
     seen = 0
 
-    for row in rows:
-        if row.uid not in pending:
-            continue
-        try:
-            result = process_clip(
-                row.uid,
-                fetch(row),
-                out_dir,
-                text=row.text,
-                source=row.source,
-                write_json=row.uid in set(json_uids),
-                prefer_gpu=prefer_gpu,
-            )
-        except Exception as error:  # noqa: BLE001
+    def payload_for(row: Row):
+        return (
+            row.uid, fetch(row), str(out_dir), row.text, row.source,
+            row.uid in wanted_json, prefer_gpu,
+        )
+
+    def record(uid: str, report: dict[str, Any] | None, error: str | None, source: str) -> None:
+        nonlocal seen
+        if error is not None:
             # Reason, not just the fact. "Why did 4% fail" has to be answerable
             # before anyone commits to processing the corpus.
-            manifest.record_failed(
-                row.uid, f"{type(error).__name__}: {error}", {"source": row.source}
-            )
-            continue
-        manifest.record_done(result.uid, result.npz_path, result.report)
-        reports.append(result.report)
-
-        # A corpus run is hours long; silence is indistinguishable from a hang.
+            manifest.record_failed(uid, error, {"source": source})
+        else:
+            manifest.record_done(uid, str(Path(out_dir) / f"{uid}.npz"), report or {})
+            reports.append(report or {})
         seen += 1
+        # A corpus run is hours long; silence is indistinguishable from a hang.
         if progress_every and seen % progress_every == 0:
             rate = seen / max(time.perf_counter() - started, 1e-9)
-            remaining = (len(pending) - seen) / rate if rate else 0
             print(
-                f"  {seen}/{len(pending)} clips, {rate * 60:.1f}/min, "
-                f"~{remaining / 3600:.1f}h left",
+                f"  {seen}/{len(todo)} clips, {rate * 60:.1f}/min, "
+                f"~{(len(todo) - seen) / rate / 3600:.1f}h left",
                 flush=True,
             )
+
+    if workers <= 1:
+        for row in todo:
+            try:
+                uid, report, error = _process_payload(payload_for(row))
+            except Exception as fetch_error:  # noqa: BLE001 - the fetch itself
+                uid, report, error = row.uid, None, f"{type(fetch_error).__name__}: {fetch_error}"
+            record(uid, report, error, row.source)
+        return reports
+
+    # Bounded in flight, so fetching never runs far ahead of extraction and the
+    # whole corpus is not held in memory as video bytes.
+    sources = {row.uid: row.source for row in todo}
+    queue = iter(todo)
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures: dict[Any, str] = {}
+
+        def submit_next() -> bool:
+            row = next(queue, None)
+            if row is None:
+                return False
+            try:
+                futures[pool.submit(_process_payload, payload_for(row))] = row.uid
+            except Exception as fetch_error:  # noqa: BLE001
+                record(row.uid, None, f"{type(fetch_error).__name__}: {fetch_error}", row.source)
+            return True
+
+        for _ in range(workers * 2):
+            if not submit_next():
+                break
+
+        while futures:
+            for future in as_completed(list(futures), timeout=None):
+                futures.pop(future, None)
+                uid, report, error = future.result()
+                record(uid, report, error, sources.get(uid, ""))
+                submit_next()
+                break
 
     return reports
 

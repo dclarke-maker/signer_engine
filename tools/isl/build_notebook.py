@@ -193,7 +193,7 @@ CELL_SELECT = '''#@title Select the clips — stratified, not the first N
 # 30 for a smoke test; 15000 for the RQ4 pre-training corpus. Raising this is
 # safe at any time: the manifest skips whatever is already done, so a larger
 # number extends the corpus rather than reprocessing it.
-SMOKE_CLIPS = 30  #@param {type:"integer"}
+SMOKE_CLIPS = 15000  #@param {type:"integer"}
 VERIFICATION_JSON = 3  #@param {type:"integer"}
 
 selected = triage.stratified_sample(continuous, SMOKE_CLIPS)
@@ -239,6 +239,11 @@ from tools.isl.manifest import Manifest
 
 PREFER_GPU = False  #@param {type:"boolean"}
 RETRY_FAILED = False  #@param {type:"boolean"}
+# 0 means "use the cores this machine has". MediaPipe here is CPU-bound - the
+# GPU delegate is not used - so this is the single biggest lever on a corpus
+# run. At one process it managed 3.3 clips a minute; 15,000 would have taken
+# 64 hours on a machine with 48 cores idle.
+WORKERS = 0  #@param {type:"integer"}
 
 manifest = Manifest(DRIVE / "manifest.jsonl")
 print(f"manifest: {len(manifest)} recorded, {len(manifest.done())} done")
@@ -253,10 +258,14 @@ if len(todo) > 200:
           "not end it. A disconnect costs only the clip in flight either way.")
 
 started = time.perf_counter()
+import os
+workers = WORKERS or max(1, (os.cpu_count() or 2) - 1)
+print(f"{os.cpu_count()} cores, using {workers} workers")
+
 reports = smoke.run_batch(
     selected, fetch, DRIVE / "sequences", manifest,
     json_uids=json_uids, prefer_gpu=PREFER_GPU, retry_failed=RETRY_FAILED,
-    progress_every=50,
+    progress_every=50, workers=workers,
 )
 elapsed = time.perf_counter() - started
 
