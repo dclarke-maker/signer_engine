@@ -16,18 +16,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { createFramingGate } from "@/lib/capture/framing";
-import {
-  createRestDetector,
-  type StopReason,
-} from "@/lib/capture/rest-detector";
 import { TARGET_FPS, getExtractor } from "@/lib/extractors";
-import { formatElapsed } from "@/lib/format-elapsed";
 import { trpc } from "@/lib/trpc";
 import { uploadSequence } from "@/lib/upload-sequence";
 import {
   BLOCK_SIZE,
   COUNTDOWN_MS,
   HANDOVER_MS,
+  RECORDING_WINDOW_MS,
 } from "@/shared/capture-session";
 import type { CorpusCategory } from "@/shared/corpus";
 import type {
@@ -57,7 +53,7 @@ type Item = {
   frameCount?: number;
   durationMs?: number;
   coverage?: Coverage;
-  stopReason?: StopReason | "manual";
+  stopReason?: "window" | "manual";
   error?: string;
 };
 
@@ -221,7 +217,7 @@ export default function CaptureBlockScreen() {
   // -- recording, ended by the signer coming to rest -------------------------
 
   const finish = useCallback(
-    async (reason: StopReason | "manual") => {
+    async (reason: "window" | "manual") => {
       const extractor = extractorRef.current;
       const at = index;
       const sessionId = sessionIdRef.current;
@@ -290,10 +286,20 @@ export default function CaptureBlockScreen() {
   useEffect(() => {
     if (phase !== "recording") return;
     const extractor = extractorRef.current;
-    const detector = createRestDetector();
     framesRef.current = [];
     setElapsedMs(0);
     let stopping = false;
+
+    // A fixed window rather than a detected ending. Watching the landmarks and
+    // stopping when the signer came to rest ended three sentences of ten
+    // correctly and let seven run to the limit, because resting hands and
+    // slowly-signing hands move at the same speed. That judgement now happens
+    // afterwards, against the stored frames, where being wrong is recoverable.
+    const closes = setTimeout(() => {
+      if (stopping) return;
+      stopping = true;
+      void finish("window");
+    }, RECORDING_WINDOW_MS);
 
     void extractor.start({ targetFps: TARGET_FPS }).then(() => {
       if (stopping) return;
@@ -303,16 +309,12 @@ export default function CaptureBlockScreen() {
         if (stopping) return;
         framesRef.current.push(frame);
         setElapsedMs(frame.t);
-        const verdict = detector.accept(frame);
-        if (verdict.stop && verdict.reason) {
-          stopping = true;
-          void finish(verdict.reason);
-        }
       });
     });
 
     return () => {
       stopping = true;
+      clearTimeout(closes);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, index]);
@@ -483,10 +485,26 @@ export default function CaptureBlockScreen() {
             ) : phase === "recording" ? (
               <>
                 <View style={styles.recordingDot} />
-                <Text style={styles.stageBig}>{formatElapsed(elapsedMs)}</Text>
+                <Text style={styles.stageBig}>
+                  {Math.max(
+                    0,
+                    Math.ceil((RECORDING_WINDOW_MS - elapsedMs) / 1000),
+                  )}
+                  s
+                </Text>
+                <View style={styles.windowTrack}>
+                  <View
+                    style={[
+                      styles.windowFill,
+                      {
+                        width: `${Math.max(0, 100 - (elapsedMs / RECORDING_WINDOW_MS) * 100)}%`,
+                      },
+                    ]}
+                  />
+                </View>
                 <Text style={styles.stageNote}>
-                  Sign the sentence. Lower your hands when you finish — it stops
-                  on its own.
+                  Sign the sentence, then rest until the bar runs out. Tap
+                  anywhere if you finish early.
                 </Text>
               </>
             ) : (
@@ -574,9 +592,7 @@ function BlockReview({
                     : item.status === "uploading"
                       ? "Sending…"
                       : `${item.frameCount ?? 0} frames · ${Math.round(weakest(item) * 100)}% in frame${
-                          item.stopReason === "max-duration"
-                            ? " · reached the time limit"
-                            : ""
+                          item.stopReason === "manual" ? " · stopped early" : ""
                         }`}
                 </Text>
                 {low && item.status !== "failed" ? (
@@ -709,6 +725,14 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   framingFill: { height: 8, backgroundColor: "#FFFFFF" },
+  windowTrack: {
+    width: "70%",
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    overflow: "hidden",
+  },
+  windowFill: { height: 8, backgroundColor: "#E12D39" },
 
   reviewWrap: { flex: 1 },
   reviewContent: { padding: 20, gap: 12 },

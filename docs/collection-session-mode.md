@@ -46,8 +46,8 @@ Then, without touching the phone, for ten sentences:
 5. **Countdown**, 3 s. The capture session row is opened on the server during
    it; if that fails the count holds rather than recording something with
    nowhere to be stored.
-6. **Recording.** Ends on its own — see below. Tapping anywhere also stops it,
-   for a signer who does walk up.
+6. **Recording**, for a fixed 12 seconds with the remaining time shown. Tapping
+   anywhere ends it early, for a signer who does walk up.
 7. **"✓ Saved"**, then the next sentence. The upload runs in the background so
    nobody stands watching a progress bar.
 
@@ -60,42 +60,51 @@ trips to the phone instead of four hundred.
 
 ## How recording ends
 
-`lib/capture/rest-detector.ts`. Two guards matter more than stopping promptly,
-because over-recording leaves trailing stillness that trims cleanly while
-truncation removes signed content that cannot be recovered.
+**A fixed 12-second window.** The signer sees the seconds remaining and a bar
+that empties; a tap anywhere ends it early.
+
+It was originally a detected ending — the app watched the landmarks and stopped
+when the signer came to rest. Measured over a real ten-sentence block that
+ended **three of ten** correctly and let seven run to the limit, and no
+threshold repaired it: resting hands held at the waist moved at a median 0.128
+frame-heights per second against a 0.12 threshold, and raising it far enough to
+catch rest made stretches of actual signing read as still. The full numbers are
+in [reports/rest-detection-measurement.md](reports/rest-detection-measurement.md).
+
+The fault was structural. Ending a sentence on the device is irreversible and
+decided from a single frame; every landmark is stored, so the same judgement
+made afterwards costs nothing when wrong and can be recomputed. It now lives in
+`shared/rest-trim.ts` as `proposeTrim`, which **reports** where a sequence could
+be cut and returns `found: false` rather than guessing when no confident resting
+point exists. Nothing is trimmed on the strength of the current numbers.
+
+Two guards survive the move, because trailing stillness is cheap and a truncated
+utterance is not:
 
 - **It must see movement first.** After the countdown a signer stands still with
-  their hands down, which is indistinguishable from having finished. Without
-  this guard every sentence would stop before it began.
+  their hands down, which is indistinguishable from having finished.
 - **Rest must persist for 1.5 s.** A held handshape is stillness that carries
   meaning; sign languages use holds as content.
 
-Rest is *either* hands leaving the frame — how signers actually finish, and the
-more reliable signal — *or* hand speed below `REST_MOTION_THRESHOLD`. Speed is
-measured after aspect correction, since x is normalised by frame width and y by
-height; on a 9:16 frame raw dx under-reads lateral movement by nearly half, and
-signing is largely lateral.
-
-A hard cap at 20 s always fires. The sample is kept and flagged in the review as
-having reached the time limit.
+Speed is measured after aspect correction, since x is normalised by frame width
+and y by height; on a 9:16 frame raw dx under-reads lateral movement by nearly
+half, and signing is largely lateral.
 
 ## What still needs calibrating on real signers
 
-`REST_MOTION_THRESHOLD` (0.12 frame-heights/second) is a starting value, not a
-measurement. It has to sit between MediaPipe's landmark jitter on a held pose
-and the slowest deliberate signing movement, and that gap is not wide. **Nobody
-has yet run a block with a Deaf signer.**
+**No block has been recorded by a Deaf signer.** The measurement above was hand
+movement, not NSL, and did not exercise the signing space — real signing reaches
+the face and the sides, so the separation between signing and rest may be much
+wider than these numbers suggest.
 
-The pilot should check, per sentence:
+At the NDFN pilot, before the full cohort: capture 10–20 genuinely signed
+sentences, re-run the analysis in the report, and fit `REST_MOTION_THRESHOLD`
+against them. Also worth checking whether 12 s is the right window — the three
+sentences that did end on detected rest ran 5.7 s, 8.9 s and 9.4 s including the
+rest that ended them.
 
-- how often recording stopped on `rest` versus `max-duration` — a lot of the
-  latter means rest is never being detected;
-- whether any sample ends mid-sign, which is the failure that costs data;
-- the trailing stillness on rest-stopped samples, which sets how much to trim.
-
-`COUNTDOWN_MS`, `REST_HOLD_MS`, `MIN_RECORDING_MS` and `FRAMING_FRAMES` are all
-in `shared/capture-session.ts` and are meant to be changed once those numbers
-exist.
+Every timing lives in `shared/capture-session.ts` and is meant to change once
+those numbers exist.
 
 ## Limits
 
@@ -106,5 +115,8 @@ exist.
 - **No per-sample review before submission.** Bad framing surfaces at the end of
   a block rather than immediately. This is the deliberate trade for not walking:
   the block review still catches it while someone is standing at the phone.
+- **The signer waits out the tail of every window.** A four-second sentence
+  still occupies twelve. That is the price of never truncating one, and it is
+  paid in a place where the signer is standing still rather than walking.
 - The single-sentence screen (`app/capture.tsx`) is unchanged and remains
   reachable as *Record just this sentence*.

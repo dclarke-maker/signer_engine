@@ -1,19 +1,17 @@
 import {
-  MAX_RECORDING_MS,
   MIN_RECORDING_MS,
   REST_HOLD_MS,
   REST_MOTION_THRESHOLD,
-} from "@/shared/capture-session";
-import type { Landmark, LandmarkFrame } from "@/shared/landmarks";
+} from "./capture-session";
+import type { Landmark, LandmarkFrame } from "./landmarks";
 
 export type RestDetectorOptions = {
   minRecordingMs: number;
-  maxRecordingMs: number;
   restHoldMs: number;
   motionThreshold: number;
 };
 
-export type StopReason = "rest" | "max-duration";
+export type StopReason = "rest";
 
 export type RestVerdict = {
   /** True once the sentence should be considered finished. */
@@ -29,7 +27,6 @@ export type RestVerdict = {
 
 const DEFAULTS: RestDetectorOptions = {
   minRecordingMs: MIN_RECORDING_MS,
-  maxRecordingMs: MAX_RECORDING_MS,
   restHoldMs: REST_HOLD_MS,
   motionThreshold: REST_MOTION_THRESHOLD,
 };
@@ -77,21 +74,29 @@ function distance(a: Landmark, b: Landmark, aspect: number): number {
 }
 
 /**
- * Decides when a signer has finished a sentence, so nobody has to walk back to
- * the phone to press stop.
+ * Finds where a signer stopped signing, **after the fact**.
  *
- * Two guards keep it from cutting a sentence short, and both matter more than
- * stopping promptly:
+ * This ran live on the device until a measured ten-sentence run showed it
+ * cannot: it ended three sentences correctly and let seven reach the time
+ * limit. The cause is not a badly chosen threshold. Resting hands held at the
+ * waist moved at a median 0.128 frame-heights per second and the threshold
+ * separating rest from signing was 0.12 - the same number - while raising it
+ * far enough to catch rest made stretches of real signing read as still. One
+ * frame does not carry the evidence needed to tell the two apart.
  *
- * **It must see movement first.** After the countdown a signer is standing
- * still with their hands down, which is indistinguishable from having finished.
- * Without this the detector would stop every sentence before it began.
+ * So the decision moved here, where it is reversible. The device records a
+ * fixed window and stores every frame; this proposes a trim afterwards, and a
+ * proposal that is wrong costs nothing and can be recomputed with a different
+ * threshold against real signing.
  *
- * **Rest has to persist.** A hold mid-sentence - a pause for emphasis, or
- * recalling a sign - is still, and sign languages use held handshapes as
- * content. Requiring a sustained rest window trades a little trailing stillness,
- * which trims cleanly, for not amputating the end of an utterance, which cannot
- * be recovered without asking the signer to record it again.
+ * Two guards remain, and both still matter because trailing stillness is cheap
+ * and a truncated utterance is not:
+ *
+ * **It must see movement first.** After the countdown a signer stands still
+ * with their hands down, which is indistinguishable from having finished.
+ *
+ * **Rest has to persist.** A held handshape is stillness that carries meaning;
+ * sign languages use holds as content.
  */
 export function createRestDetector(options: Partial<RestDetectorOptions> = {}) {
   const config = { ...DEFAULTS, ...options };
@@ -135,9 +140,7 @@ export function createRestDetector(options: Partial<RestDetectorOptions> = {}) {
 
       const restingMs = restingSince === null ? 0 : frame.t - restingSince;
 
-      if (frame.t >= config.maxRecordingMs) {
-        stopped = "max-duration";
-      } else if (
+      if (
         armed &&
         frame.t >= config.minRecordingMs &&
         restingMs >= config.restHoldMs
@@ -155,4 +158,63 @@ export function createRestDetector(options: Partial<RestDetectorOptions> = {}) {
       stopped = null;
     },
   };
+}
+
+export type TrimProposal = {
+  /** Frames up to and including this index are kept. */
+  endIndex: number;
+  /** Timestamp of the last kept frame, ms from the start of the sequence. */
+  endMs: number;
+  /** Frames the proposal would drop from the tail. */
+  droppedFrames: number;
+  /** Milliseconds of trailing stillness the proposal would drop. */
+  droppedMs: number;
+  /** False when no confident resting point was found and nothing should be cut. */
+  found: boolean;
+};
+
+/**
+ * Where a stored sequence could be cut, without cutting it.
+ *
+ * Returns the whole sequence with `found: false` when no resting point is
+ * confidently identified, which on the run this was measured against is the
+ * common case. Reporting a trim it cannot justify would be worse than
+ * reporting none: the trailing stillness is inert, and a wrongly removed
+ * ending is signed content nothing downstream can recover.
+ */
+export function proposeTrim(
+  frames: LandmarkFrame[],
+  options: Partial<RestDetectorOptions> = {},
+): TrimProposal {
+  const whole = (found: boolean): TrimProposal => ({
+    endIndex: frames.length - 1,
+    endMs: frames.length ? frames[frames.length - 1].t : 0,
+    droppedFrames: 0,
+    droppedMs: 0,
+    found,
+  });
+  if (frames.length === 0) return { ...whole(false), endIndex: -1 };
+
+  const detector = createRestDetector(options);
+  const holdMs = options.restHoldMs ?? REST_HOLD_MS;
+
+  for (let i = 0; i < frames.length; i += 1) {
+    const verdict = detector.accept(frames[i]);
+    if (!verdict.stop) continue;
+    // The stop lands at the far end of the hold window, so the signing itself
+    // ended when the stillness began. Cutting at the stop would keep the whole
+    // hold; cutting before it risks the last moments of the sentence.
+    const cutAt = frames[i].t - holdMs;
+    let end = i;
+    while (end > 0 && frames[end].t > cutAt) end -= 1;
+    const last = frames[frames.length - 1];
+    return {
+      endIndex: end,
+      endMs: frames[end].t,
+      droppedFrames: frames.length - 1 - end,
+      droppedMs: last.t - frames[end].t,
+      found: true,
+    };
+  }
+  return whole(false);
 }

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { createFramingGate, isInFrame } from "../lib/capture/framing";
-import { createRestDetector, handSpeed } from "../lib/capture/rest-detector";
-import { BLOCK_SIZE, MAX_RECORDING_MS } from "../shared/capture-session";
+import {
+  createRestDetector,
+  handSpeed,
+  proposeTrim,
+} from "../shared/rest-trim";
+import {
+  BLOCK_SIZE,
+  RECORDING_WINDOW_MS,
+  REST_HOLD_MS,
+} from "../shared/capture-session";
 import { CORPUS_CATEGORIES, CORPUS_SIZE } from "../shared/corpus";
 import { makeFrame, makeLandmarks } from "./fixtures/landmark-frames";
 import { HAND_LANDMARK_COUNT, type LandmarkFrame } from "../shared/landmarks";
@@ -157,24 +165,23 @@ describe("rest detector", () => {
     expect(verdict.stop).toBe(false);
   });
 
-  it("stops at the hard cap even if the signer never rests", () => {
+  it("never stops a signer who is still moving", () => {
+    // The device no longer stops at all - it records a fixed window. Nothing
+    // here may cut a sentence that is still in progress.
     const detector = createRestDetector();
     const endless = moving(0, 700, 0.02); // ~23s of continuous movement
-    const verdict = run(detector, endless);
-
-    expect(verdict.stop).toBe(true);
-    expect(verdict.reason).toBe("max-duration");
+    expect(run(detector, endless).stop).toBe(false);
   });
 
   it("keeps its verdict once it has stopped", () => {
     const detector = createRestDetector();
-    const verdict = run(detector, moving(0, 700, 0.02));
-    expect(verdict.stop).toBe(true);
-    // Frames still arrive from the camera between the stop decision and the
-    // extractor actually halting; none of them may change the reason.
-    expect(detector.accept(frameAt(MAX_RECORDING_MS + 500, 5)).reason).toBe(
-      "max-duration",
+    const signing = moving(0, 90, 0.02);
+    const after = Array.from({ length: 90 }, (_, i) =>
+      frameAt(3000 + Math.round(i * (1000 / 30)), 90 * 0.02),
     );
+    expect(run(detector, [...signing, ...after]).stop).toBe(true);
+    // Frames keep arriving after the decision; none may change it.
+    expect(detector.accept(frameAt(9000, 5)).reason).toBe("rest");
   });
 
   it("starts clean after a reset", () => {
@@ -244,5 +251,60 @@ describe("block ordering", () => {
     const { promptOrderForSigner } = await import("../server/session-service");
     const firsts = [1, 2, 3, 4, 5].map((id) => promptOrderForSigner(id)[0][0]);
     expect(new Set(firsts).size).toBe(CORPUS_CATEGORIES.length);
+  });
+});
+
+describe("offline trim proposal", () => {
+  it("cuts where the stillness began, not where the hold expired", () => {
+    // The stop lands at the far end of the hold window. Cutting there would
+    // keep the whole hold; the sentence itself ended when the signer stopped.
+    const signing = moving(0, 90, 0.02); // 3s of movement
+    const resting = Array.from({ length: 120 }, (_, i) =>
+      frameAt(3000 + Math.round(i * (1000 / 30)), 90 * 0.02),
+    );
+    const proposal = proposeTrim([...signing, ...resting]);
+
+    expect(proposal.found).toBe(true);
+    expect(proposal.endMs).toBeGreaterThanOrEqual(2900);
+    expect(proposal.endMs).toBeLessThan(3000 + REST_HOLD_MS);
+    expect(proposal.droppedFrames).toBeGreaterThan(0);
+  });
+
+  it("proposes nothing rather than guessing when no rest is found", () => {
+    // This is the common case on the run that was measured: hands resting at
+    // the waist move at the same speed as slow signing, so no confident
+    // resting point exists. Reporting a trim it cannot justify would remove
+    // signed content that nothing downstream could recover.
+    const proposal = proposeTrim(moving(0, 300, 0.02));
+
+    expect(proposal.found).toBe(false);
+    expect(proposal.droppedFrames).toBe(0);
+    expect(proposal.endIndex).toBe(299);
+  });
+
+  it("leaves a sequence that is entirely still completely alone", () => {
+    // Never armed, so nothing is cut - a signer who never started is not a
+    // signer who finished.
+    const proposal = proposeTrim(
+      Array.from({ length: 200 }, (_, i) =>
+        frameAt(Math.round(i * (1000 / 30)), 0),
+      ),
+    );
+    expect(proposal.found).toBe(false);
+    expect(proposal.droppedFrames).toBe(0);
+  });
+
+  it("handles an empty sequence", () => {
+    expect(proposeTrim([]).droppedFrames).toBe(0);
+  });
+});
+
+describe("the recording window", () => {
+  it("is long enough for a sentence and its trailing rest", () => {
+    // Measured: the three sentences that did end on detected rest ran 5.7s,
+    // 8.9s and 9.4s including the rest that ended them. The window has to
+    // clear the longest of those with room, because it is now the only thing
+    // that ends a sentence.
+    expect(RECORDING_WINDOW_MS).toBeGreaterThan(9_400);
   });
 });
