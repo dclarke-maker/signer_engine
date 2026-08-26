@@ -12,6 +12,8 @@ import {
 } from "react-native";
 
 import { LandmarkCamera } from "@/components/landmark-camera";
+import { SafeAreaView } from "react-native-safe-area-context";
+
 import { ScreenContainer } from "@/components/screen-container";
 import { createFramingGate } from "@/lib/capture/framing";
 import {
@@ -421,42 +423,39 @@ export default function CaptureBlockScreen() {
         onUnavailable={handleUnavailable}
         onPreviewStateChange={handlePreviewState}
       />
-      {/* During recording the whole screen is a stop target, so a signer who
-          does walk up can end a sentence without hunting for a small button. */}
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        disabled={phase !== "recording"}
-        onPress={() => void finish("manual")}
-      >
-        <View
-          style={[styles.scrim, phase === "recording" && styles.scrimRecording]}
-        />
-      </Pressable>
-
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          styles.scrim,
+          phase === "recording" && styles.scrimRecording,
+        ]}
+        pointerEvents="none"
+      />
       <ScreenContainer
         edges={["top", "bottom", "left", "right"]}
         containerClassName="bg-transparent"
         safeAreaClassName="bg-transparent"
+        pointerEvents="none"
       >
-        <View style={styles.overlay} pointerEvents="box-none">
-          <View style={styles.topBar} pointerEvents="box-none">
-            <Pressable onPress={leave} style={styles.exitButton}>
-              <Text style={styles.exitButtonText}>×</Text>
-            </Pressable>
-            <Text style={styles.blockCounter}>
-              {Math.min(index + 1, total)} of {total} in this block
-            </Text>
-            <View style={styles.exitSpacer} />
+        <View style={styles.overlay}>
+          <View style={styles.header}>
+            <View style={styles.topBar}>
+              <View style={styles.exitSpacer} />
+              <Text style={styles.blockCounter}>
+                {Math.min(index + 1, total)} of {total} in this block
+              </Text>
+              <View style={styles.exitSpacer} />
+            </View>
+
+            {current ? (
+              <View style={styles.promptBlock}>
+                <Text style={styles.promptNepali}>{current.textNepali}</Text>
+                <Text style={styles.promptEnglish}>{current.textEnglish}</Text>
+              </View>
+            ) : null}
           </View>
 
-          {current ? (
-            <View style={styles.promptBlock} pointerEvents="none">
-              <Text style={styles.promptNepali}>{current.textNepali}</Text>
-              <Text style={styles.promptEnglish}>{current.textEnglish}</Text>
-            </View>
-          ) : null}
-
-          <View style={styles.stage} pointerEvents="none">
+          <View style={styles.stage}>
             {blocked ? (
               <Text style={styles.stageNote}>{blocked}</Text>
             ) : phase === "warming" ? (
@@ -496,6 +495,22 @@ export default function CaptureBlockScreen() {
           </View>
         </View>
       </ScreenContainer>
+
+      {/* Above the visual overlay: during recording the whole screen is a stop
+          target, so a signer who does walk up can end a sentence without
+          hunting for a small button. */}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        disabled={phase !== "recording"}
+        onPress={() => void finish("manual")}
+      />
+
+      {/* Above the stop target, so leaving stays possible mid-recording. */}
+      <SafeAreaView style={styles.exitLayer} pointerEvents="box-none">
+        <Pressable onPress={leave} style={styles.exitButton}>
+          <Text style={styles.exitButtonText}>×</Text>
+        </Pressable>
+      </SafeAreaView>
     </View>
   );
 }
@@ -623,9 +638,11 @@ function BlockReview({
 
 const styles = StyleSheet.create({
   fullScreen: { flex: 1, backgroundColor: "#000000" },
-  scrim: { flex: 1, backgroundColor: "rgba(16,42,67,0.35)" },
+  scrim: { backgroundColor: "rgba(16,42,67,0.35)" },
+  exitLayer: { position: "absolute", top: 0, left: 0, padding: 20 },
   scrimRecording: { borderWidth: 6, borderColor: "#E12D39" },
   overlay: { flex: 1, justifyContent: "space-between", padding: 20 },
+  header: { gap: 18 },
 
   topBar: {
     flexDirection: "row",

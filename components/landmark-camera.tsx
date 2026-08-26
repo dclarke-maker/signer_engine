@@ -53,10 +53,33 @@ export type LandmarkCameraProps = {
  * second choice. Back is never used: a signer who cannot see the frame cannot
  * tell whether they stayed in it, and the sample would be unusable.
  */
-function useSigningDevice(): CameraDevice | undefined {
+function useSigningDevice(): {
+  device: CameraDevice | undefined;
+  devices: CameraDevice[];
+} {
   const front = useCameraDevice("front");
   const devices = useCameraDevices();
-  return front ?? devices.find((d) => d.position === "external");
+  return {
+    device: front ?? devices.find((d) => d.position === "external"),
+    devices,
+  };
+}
+
+/**
+ * Guards against waiting forever for a device list that will never arrive.
+ *
+ * A phone genuinely without a usable camera reports an empty list and stays
+ * that way, which is the same shape as enumeration still running. This settles
+ * to true after a grace period so that case still reaches the signer with an
+ * explanation rather than an indefinite "opening the camera".
+ */
+function useSettledAfter(ms: number): boolean {
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSettled(true), ms);
+    return () => clearTimeout(id);
+  }, [ms]);
+  return settled;
 }
 
 /**
@@ -84,10 +107,14 @@ function useSigningDevice(): CameraDevice | undefined {
  */
 function useCameraShouldStream(): boolean {
   const isFocused = useIsFocused();
-  const [inForeground, setInForeground] = useState(() => AppState.currentState === "active");
+  const [inForeground, setInForeground] = useState(
+    () => AppState.currentState === "active",
+  );
 
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (next) => setInForeground(next === "active"));
+    const sub = AppState.addEventListener("change", (next) =>
+      setInForeground(next === "active"),
+    );
     return () => sub.remove();
   }, []);
 
@@ -101,7 +128,8 @@ export function LandmarkCamera({
   onUnavailable,
   onPreviewStateChange,
 }: LandmarkCameraProps) {
-  const device = useSigningDevice();
+  const { device, devices } = useSigningDevice();
+  const settled = useSettledAfter(4000);
   const pushed = needsPushedFrames(extractor);
   const streaming = useCameraShouldStream();
 
@@ -109,13 +137,18 @@ export function LandmarkCamera({
   const deliver = useMemo(
     () =>
       pushed
-        ? Worklets.createRunOnJS((packed: string) => extractor.acceptPackedFrame(packed))
+        ? Worklets.createRunOnJS((packed: string) =>
+            extractor.acceptPackedFrame(packed),
+          )
         : null,
     [extractor, pushed],
   );
 
   const plugin = useMemo(
-    () => (pushed ? VisionCameraProxy.initFrameProcessorPlugin(HOLISTIC_PLUGIN_NAME, {}) : null),
+    () =>
+      pushed
+        ? VisionCameraProxy.initFrameProcessorPlugin(HOLISTIC_PLUGIN_NAME, {})
+        : null,
     [pushed],
   );
 
@@ -151,8 +184,17 @@ export function LandmarkCamera({
   // plugin - and pairing a push extractor with a plain preview would produce a
   // capture of zero frames with no error, so that combination is refused.
   const canPush = pushed && device != null && plugin != null;
+
+  // VisionCamera enumerates devices natively and reports an empty list until it
+  // finishes. Read literally that is indistinguishable from a phone with no
+  // camera, and screens latch the reason permanently - so a cold start raced
+  // the enumeration and told the signer their phone had no front camera, on a
+  // phone that had one. An empty list means "not yet"; only a list that has
+  // arrived without a usable lens in it means "no camera".
+  const resolving =
+    pushed && device == null && devices.length === 0 && !settled;
   const unavailableReason =
-    pushed && !canPush
+    pushed && !canPush && !resolving
       ? device == null
         ? "No front-facing camera was found on this device, so motion points cannot be read."
         : "This build cannot read motion points. Please reinstall the app from the study link."
@@ -171,6 +213,12 @@ export function LandmarkCamera({
       <View style={[style ?? StyleSheet.absoluteFill, styles.unavailable]}>
         <Text style={styles.unavailableText}>{unavailableReason}</Text>
       </View>
+    );
+  }
+
+  if (resolving) {
+    return (
+      <View style={[style ?? StyleSheet.absoluteFill, styles.unavailable]} />
     );
   }
 
@@ -213,5 +261,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 28,
   },
-  unavailableText: { color: "#FFFFFF", fontSize: 16, lineHeight: 24, textAlign: "center" },
+  unavailableText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+  },
 });
