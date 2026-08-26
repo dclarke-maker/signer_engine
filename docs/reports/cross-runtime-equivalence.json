@@ -1,0 +1,57 @@
+{
+  "provenance": {
+    "git_commit": null,
+    "python": "3.11.16",
+    "platform": "Linux-6.18.37-0-virt-aarch64-with-glibc2.41",
+    "packages": {
+      "mediapipe": "1.0.1",
+      "numpy": "2.4.6",
+      "cv2": "5.0.0",
+      "requests": "2.34.2"
+    },
+    "model": {
+      "path": "/w/native/holistic/models/holistic_landmarker.task",
+      "sha256": "e2dab61191e2dcd0a15f943d8e3ed1dce13c82dfa597b9dd39f562975a50c3f8"
+    },
+    "dataset": {
+      "name": "iSign",
+      "revision": null,
+      "csv_sha256": null,
+      "licence": "CC-BY-NC-SA-4.0"
+    },
+    "machine": {
+      "cpu": "aarch64",
+      "cpu_count": 2
+    },
+    "run": {
+      "worker_count": null,
+      "delegate": "CPU"
+    }
+  },
+  "android_device": "sdk_gphone64_arm64",
+  "frames_compared": 16,
+  "categorical_mismatches": [],
+  "per_stream": {
+    "face": {
+      "max_abs_diff": 0.005991640290145872,
+      "mean_abs_diff": 0.0004896138277971282,
+      "max_px_at_1080": 6.470971513357542
+    },
+    "pose": {
+      "max_abs_diff": 0.011697805464553845,
+      "mean_abs_diff": 0.0008532371541362649,
+      "max_px_at_1080": 12.633629901718153
+    },
+    "leftHand": {
+      "max_abs_diff": 0.002370094297027614,
+      "mean_abs_diff": 0.0002995012471358614,
+      "max_px_at_1080": 2.559701840789823
+    },
+    "rightHand": {
+      "max_abs_diff": 0.017953275997161844,
+      "mean_abs_diff": 0.0006547797597907496,
+      "max_px_at_1080": 19.38953807693479
+    }
+  },
+  "note": "Frame-level coordinates omitted: the fixtures are iSign frames, which are CC-BY-NC-SA and show a person. Regenerate with tools/isl/cross_runtime.py."
+}

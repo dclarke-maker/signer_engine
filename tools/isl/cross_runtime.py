@@ -162,6 +162,13 @@ def main() -> None:
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--gpu", action="store_true")
     parser.add_argument("--out", type=Path, default=Path("tools/isl/fixtures/cross-runtime.json"))
+    # Set from measurement, not invented. Across 16 frames the observed maxima
+    # were 0.006 (face), 0.012 (pose), 0.002 and 0.018 (hands), with means
+    # around 0.0005 - sub-pixel at 1080. These sit above that and would still
+    # catch a coordinate-space break, which would show as a consistent offset
+    # across every frame rather than one landmark on one frame.
+    parser.add_argument("--max-divergence", type=float, default=0.02)
+    parser.add_argument("--mean-divergence", type=float, default=0.002)
     args = parser.parse_args()
 
     android = json.loads(args.android_json.read_text())
@@ -188,6 +195,24 @@ def main() -> None:
     for problem in report["comparison"]["categorical_mismatches"]:
         print(f"  MISMATCH {problem}")
     print(f"\nwrote {args.out}")
+
+    # Categorical disagreement is not a tolerance question: different counts or
+    # a swapped hand means the runtimes disagree about structure.
+    failures = list(report["comparison"]["categorical_mismatches"])
+    for stream, stats in summary.items():
+        if stats["mean_abs_diff"] is None:
+            continue
+        if stats["max_abs_diff"] > args.max_divergence:
+            failures.append(
+                f"{stream}: max {stats['max_abs_diff']:.5f} over {args.max_divergence}"
+            )
+        if stats["mean_abs_diff"] > args.mean_divergence:
+            failures.append(
+                f"{stream}: mean {stats['mean_abs_diff']:.5f} over {args.mean_divergence}"
+            )
+    if failures:
+        raise SystemExit("cross-runtime equivalence FAILED:\n  " + "\n  ".join(failures))
+    print("equivalence within tolerance")
 
 
 if __name__ == "__main__":

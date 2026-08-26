@@ -354,6 +354,10 @@ def projections(
         return {"error": "no clips processed"}
 
     frames = np.array([r["frame_count"] for r in reports], dtype=float)
+    # os.path.getsize of the written .npz, so this is the compressed figure and
+    # it matches what the corpus actually occupies. Note that `du` against a
+    # Drive for Desktop mount does not: it reports the locally cached slice, not
+    # the stored size, and reads about a hundredfold low.
     sizes = np.array([r["npz_bytes"] for r in reports], dtype=float)
     durations = np.array([r["duration_ms"] for r in reports], dtype=float) / 1000.0
 
