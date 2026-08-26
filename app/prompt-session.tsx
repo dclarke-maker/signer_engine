@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { BLOCK_SIZE } from "@/shared/capture-session";
 import { CATEGORY_PURPOSE, type CorpusCategory } from "@/shared/corpus";
 import { trpc } from "@/lib/trpc";
 
@@ -28,7 +29,9 @@ export default function PromptSessionScreen() {
   const utils = trpc.useUtils();
   const signerQuery = trpc.signer.me.useQuery();
   const consentQuery = trpc.consent.status.useQuery();
-  const promptQuery = trpc.capture.nextPrompt.useQuery(undefined, { enabled: !!signerQuery.data });
+  const promptQuery = trpc.capture.nextPrompt.useQuery(undefined, {
+    enabled: !!signerQuery.data,
+  });
   const startSession = trpc.capture.startSession.useMutation();
   const skip = trpc.capture.skipPrompt.useMutation();
 
@@ -45,16 +48,32 @@ export default function PromptSessionScreen() {
     // consent screen instead of sign-in - and consenting then failed as
     // unauthorized.
     if (!signerQuery.data) return;
-    if (!consentQuery.isLoading && consentQuery.data && !consentQuery.data.granted) {
+    if (
+      !consentQuery.isLoading &&
+      consentQuery.data &&
+      !consentQuery.data.granted
+    ) {
       router.replace("/consent");
     }
   }, [signerQuery.data, consentQuery.data, consentQuery.isLoading]);
 
   const prompt = promptQuery.data;
 
-  const start = async () => {
+  /**
+   * Session mode: the signer props the phone up once and records a run of
+   * sentences without touching it. The alternative below records a single
+   * sentence and is what a redo uses.
+   */
+  const startBlock = () => {
+    if (Platform.OS !== "web")
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push("/capture-block" as never);
+  };
+
+  const startOne = async () => {
     if (!prompt) return;
-    if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web")
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const session = await startSession.mutateAsync({ promptId: prompt.id });
     router.push({
       pathname: "/capture",
@@ -69,14 +88,21 @@ export default function PromptSessionScreen() {
 
   const confirmSkip = async () => {
     if (!prompt) return;
-    await skip.mutateAsync({ promptId: prompt.id, reason: reason.trim() || "not given" });
+    await skip.mutateAsync({
+      promptId: prompt.id,
+      reason: reason.trim() || "not given",
+    });
     setSkipping(false);
     setReason("");
     await utils.capture.nextPrompt.invalidate();
     await utils.capture.progress.invalidate();
   };
 
-  if (signerQuery.isLoading || consentQuery.isLoading || promptQuery.isLoading) {
+  if (
+    signerQuery.isLoading ||
+    consentQuery.isLoading ||
+    promptQuery.isLoading
+  ) {
     return (
       <ScreenContainer edges={["top", "bottom", "left", "right"]}>
         <View style={styles.loading}>
@@ -96,11 +122,15 @@ export default function PromptSessionScreen() {
           </View>
           <Text style={styles.title}>Every sentence is done</Text>
           <Text style={styles.body}>
-            You have worked through the whole set. Thank you for contributing to this research.
+            You have worked through the whole set. Thank you for contributing to
+            this research.
           </Text>
           <Pressable
             onPress={() => router.replace("/")}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              pressed && styles.pressed,
+            ]}
           >
             <Text style={styles.primaryButtonText}>Return to workspace</Text>
           </Pressable>
@@ -115,13 +145,18 @@ export default function PromptSessionScreen() {
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <View style={styles.wrap}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.progressRow}>
             <Text style={styles.progressText}>
               Sentence {completed + 1} of {total}
             </Text>
             <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>{CATEGORY_LABEL[prompt.category]}</Text>
+              <Text style={styles.categoryPillText}>
+                {CATEGORY_LABEL[prompt.category]}
+              </Text>
             </View>
           </View>
           <View style={styles.progressTrack}>
@@ -135,31 +170,53 @@ export default function PromptSessionScreen() {
                 mismatch is noticeable rather than silent. */}
             <Text style={styles.promptText}>{prompt.textNepali}</Text>
             <Text style={styles.promptEnglish}>{prompt.textEnglish}</Text>
-            <Text style={styles.promptPurpose}>{CATEGORY_PURPOSE[prompt.category]}</Text>
+            <Text style={styles.promptPurpose}>
+              {CATEGORY_PURPOSE[prompt.category]}
+            </Text>
           </View>
 
           {prompt.nepaliSource !== "ndfn-validated" ? (
             <View style={styles.draftNotice}>
-              <Text style={styles.draftTitle}>Translation not yet reviewed</Text>
+              <Text style={styles.draftTitle}>
+                Translation not yet reviewed
+              </Text>
               <Text style={styles.draftText}>
-                This Nepali wording is a draft awaiting review by a native reviewer. Do not use
-                these prompts for real data collection until they have been checked.
+                This Nepali wording is a draft awaiting review by a native
+                reviewer. Do not use these prompts for real data collection
+                until they have been checked.
               </Text>
             </View>
           ) : null}
 
           <View style={styles.guidance}>
             <Text style={styles.guidanceTitle}>Before you start</Text>
+            {/* Signing needs both hands, so the phone cannot be held. Where it
+                ends up decides the camera height, angle and distance, which is
+                the framing the coverage bars then measure - so it is said here
+                rather than left to be improvised. */}
             <Text style={styles.guidanceText}>
-              Keep your hands, face, and upper body in the frame. Sign at your natural pace. Your
-              camera is never recorded — only motion points leave this device.
+              Stand the phone up on its own — against a wall, a stack of books,
+              or a stand — at about chest height, and step back until your head
+              and both arms fit in the picture.
+            </Text>
+            <Text style={styles.guidanceText}>
+              You will be shown {BLOCK_SIZE} sentences one after another. Each
+              starts counting on its own once you are in frame, and stops on its
+              own when you lower your hands. You do not need to touch the phone
+              until the {BLOCK_SIZE} are done.
+            </Text>
+            <Text style={styles.guidanceText}>
+              Your camera is never recorded — only motion points leave this
+              device.
             </Text>
           </View>
         </ScrollView>
 
         {skipping ? (
           <View style={styles.actions}>
-            <Text style={styles.skipLabel}>Why are you skipping this sentence?</Text>
+            <Text style={styles.skipLabel}>
+              Why are you skipping this sentence?
+            </Text>
             <TextInput
               value={reason}
               onChangeText={setReason}
@@ -181,7 +238,10 @@ export default function PromptSessionScreen() {
             </Pressable>
             <Pressable
               onPress={() => setSkipping(false)}
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+              ]}
             >
               <Text style={styles.secondaryButtonText}>Cancel</Text>
             </Pressable>
@@ -194,23 +254,39 @@ export default function PromptSessionScreen() {
               </Text>
             ) : null}
             <Pressable
-              disabled={startSession.isPending}
-              onPress={start}
+              onPress={startBlock}
               style={({ pressed }) => [
                 styles.primaryButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>
+                Start signing — {BLOCK_SIZE} sentences
+              </Text>
+            </Pressable>
+            <Pressable
+              disabled={startSession.isPending}
+              onPress={startOne}
+              style={({ pressed }) => [
+                styles.secondaryButton,
                 startSession.isPending && styles.disabled,
                 pressed && styles.pressed,
               ]}
             >
               {startSession.isPending ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color="#486581" />
               ) : (
-                <Text style={styles.primaryButtonText}>Start signing</Text>
+                <Text style={styles.secondaryButtonText}>
+                  Record just this sentence
+                </Text>
               )}
             </Pressable>
             <Pressable
               onPress={() => setSkipping(true)}
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+              ]}
             >
               <Text style={styles.secondaryButtonText}>Skip this sentence</Text>
             </Pressable>
@@ -224,7 +300,11 @@ export default function PromptSessionScreen() {
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   content: { padding: 20, gap: 16 },
-  progressRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   progressText: { color: "#334E68", fontSize: 15, fontWeight: "700" },
   categoryPill: {
     borderRadius: 999,
@@ -233,9 +313,20 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   categoryPillText: { color: "#0F766E", fontSize: 13, fontWeight: "700" },
-  progressTrack: { height: 8, borderRadius: 999, backgroundColor: "#D9E2EC", overflow: "hidden" },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#D9E2EC",
+    overflow: "hidden",
+  },
   progressFill: { height: 8, borderRadius: 999, backgroundColor: "#0F766E" },
-  promptCard: { backgroundColor: "#E6FFFB", borderRadius: 24, padding: 22, gap: 10, marginTop: 6 },
+  promptCard: {
+    backgroundColor: "#E6FFFB",
+    borderRadius: 24,
+    padding: 22,
+    gap: 10,
+    marginTop: 6,
+  },
   promptLabel: {
     color: "#0F766E",
     fontSize: 13,
@@ -243,7 +334,12 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  promptText: { color: "#102A43", fontSize: 30, lineHeight: 44, fontWeight: "700" },
+  promptText: {
+    color: "#102A43",
+    fontSize: 30,
+    lineHeight: 44,
+    fontWeight: "700",
+  },
   promptEnglish: { color: "#486581", fontSize: 16, lineHeight: 23 },
   draftNotice: {
     backgroundColor: "#FFF7ED",
@@ -285,14 +381,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryButtonText: { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
-  secondaryButton: { minHeight: 48, alignItems: "center", justifyContent: "center" },
+  secondaryButton: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   secondaryButtonText: { color: "#486581", fontSize: 16, fontWeight: "600" },
   disabled: { opacity: 0.65 },
   errorText: { color: "#B91C1C", fontSize: 14, lineHeight: 20 },
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.9 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { color: "#486581", fontSize: 15 },
-  done: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 14 },
+  done: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 14,
+  },
   check: {
     width: 76,
     height: 76,
@@ -302,6 +408,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   checkText: { color: "#15803D", fontSize: 42, fontWeight: "700" },
-  title: { color: "#102A43", fontSize: 28, fontWeight: "700", textAlign: "center" },
-  body: { color: "#486581", fontSize: 16, lineHeight: 24, textAlign: "center", maxWidth: 320 },
+  title: {
+    color: "#102A43",
+    fontSize: 28,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  body: {
+    color: "#486581",
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+    maxWidth: 320,
+  },
 });

@@ -1,6 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
 
-import { captureSessions, landmarkSequences, nmmTags, sentencePrompts } from "../drizzle/schema";
+import {
+  captureSessions,
+  landmarkSequences,
+  nmmTags,
+  sentencePrompts,
+} from "../drizzle/schema";
 import { corpusSeed } from "./corpus-seed";
 import { getDb } from "./db";
 import type { NmmDetection } from "./nmm/rules";
@@ -28,7 +33,10 @@ export function promptOrderForSigner(signerId: number): string[] {
 
   const categories = [...byCategory.keys()];
   const rotation = signerId % categories.length;
-  const rotated = [...categories.slice(rotation), ...categories.slice(0, rotation)];
+  const rotated = [
+    ...categories.slice(rotation),
+    ...categories.slice(0, rotation),
+  ];
 
   const order: string[] = [];
   for (let i = 0; i < CORPUS_SIZE; i += 1) {
@@ -43,7 +51,11 @@ export function promptOrderForSigner(signerId: number): string[] {
 export async function getCaptureSession(sessionId: string) {
   const db = await requireDb();
   const row = (
-    await db.select().from(captureSessions).where(eq(captureSessions.id, sessionId)).limit(1)
+    await db
+      .select()
+      .from(captureSessions)
+      .where(eq(captureSessions.id, sessionId))
+      .limit(1)
   )[0];
   return row ?? null;
 }
@@ -85,15 +97,58 @@ export async function getSignerProgress(signerId: number) {
 }
 
 export async function getNextPromptForSigner(signerId: number) {
-  const progress = await getSignerProgress(signerId);
-  const done = new Set([...progress.completedPromptIds, ...progress.skippedPromptIds]);
-  const nextId = promptOrderForSigner(signerId).find((id) => !done.has(id));
-  if (!nextId) return null;
-  const prompt = corpusSeed.find((p) => p.id === nextId)!;
-  return { ...prompt, progress: { completed: progress.completed, total: progress.total } };
+  const block = await getNextPromptsForSigner(signerId, 1);
+  return block.prompts[0] ?? null;
 }
 
-export async function startCaptureSession(input: { signerId: number; promptId: string }) {
+/**
+ * The next run of sentences, in the signer's own order.
+ *
+ * Session mode records a whole block before the signer walks back to the phone,
+ * so it needs the run up front rather than one prompt at a time - the next
+ * sentence has to be on screen the instant the last one ends, and a round trip
+ * to the server between them is a gap the signer would stand through.
+ *
+ * A short block at the end of the corpus is returned as-is rather than padded.
+ */
+export async function getNextPromptsForSigner(
+  signerId: number,
+  count: number,
+  promptIds?: string[],
+) {
+  const progress = await getSignerProgress(signerId);
+  const done = new Set([
+    ...progress.completedPromptIds,
+    ...progress.skippedPromptIds,
+  ]);
+  // An explicit list is a redo. Those sentences are already recorded, so the
+  // ordinary selection would never offer them again - re-recording has to be
+  // able to name them. Unknown ids are dropped rather than thrown, so a stale
+  // one cannot strand a signer mid-session.
+  const ids = promptIds
+    ? promptIds
+        .filter((id) => corpusSeed.some((p) => p.id === id))
+        .slice(0, Math.max(0, count))
+    : promptOrderForSigner(signerId)
+        .filter((id) => !done.has(id))
+        .slice(0, Math.max(0, count));
+
+  return {
+    prompts: ids.map((id) => {
+      const prompt = corpusSeed.find((p) => p.id === id)!;
+      return {
+        ...prompt,
+        progress: { completed: progress.completed, total: progress.total },
+      };
+    }),
+    progress: { completed: progress.completed, total: progress.total },
+  };
+}
+
+export async function startCaptureSession(input: {
+  signerId: number;
+  promptId: string;
+}) {
   const db = await requireDb();
   const prompt = corpusSeed.find((p) => p.id === input.promptId);
   if (!prompt) throw new Error(`Unknown prompt: ${input.promptId}`);
@@ -129,7 +184,11 @@ export async function startCaptureSession(input: { signerId: number; promptId: s
   };
 }
 
-export async function skipPrompt(input: { signerId: number; promptId: string; reason: string }) {
+export async function skipPrompt(input: {
+  signerId: number;
+  promptId: string;
+  reason: string;
+}) {
   const db = await requireDb();
   const prompt = corpusSeed.find((p) => p.id === input.promptId);
   if (!prompt) throw new Error(`Unknown prompt: ${input.promptId}`);

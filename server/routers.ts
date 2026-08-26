@@ -1,3 +1,4 @@
+import { BLOCK_SIZE } from "../shared/capture-session";
 import { COOKIE_NAME } from "../shared/const.js";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -13,11 +14,18 @@ import {
   signInSigner,
 } from "./signer-service";
 import { extractBearerToken } from "./signer-security";
-import { createTranslationJob, getLatestTranslationJob } from "./translation-service";
-import { recordFeedbackVote, recordQualitativeRating } from "./feedback-service";
+import {
+  createTranslationJob,
+  getLatestTranslationJob,
+} from "./translation-service";
+import {
+  recordFeedbackVote,
+  recordQualitativeRating,
+} from "./feedback-service";
 import {
   getCaptureSession,
   getNextPromptForSigner,
+  getNextPromptsForSigner,
   getSignerProgress,
   skipPrompt,
   startCaptureSession,
@@ -37,8 +45,12 @@ import { publicProcedure, router } from "./_core/trpc";
 import { getWorkflowConfig } from "./workflow-config";
 
 /** Resolves the signer behind a Bearer token, or null when unauthenticated. */
-async function signerFromContext(ctx: { req: { headers: Record<string, unknown> } }) {
-  const token = extractBearerToken(ctx.req.headers.authorization as string | undefined);
+async function signerFromContext(ctx: {
+  req: { headers: Record<string, unknown> };
+}) {
+  const token = extractBearerToken(
+    ctx.req.headers.authorization as string | undefined,
+  );
   return token ? getSignerFromSessionToken(token) : null;
 }
 
@@ -64,23 +76,39 @@ export const appRouter = router({
       return token ? getSignerFromSessionToken(token) : null;
     }),
     signIn: publicProcedure
-      .input(z.object({ email: z.string().email().max(320), password: z.string().min(1).max(256) }))
+      .input(
+        z.object({
+          email: z.string().email().max(320),
+          password: z.string().min(1).max(256),
+        }),
+      )
       .mutation(async ({ input }) => {
         try {
           return await signInSigner(input);
         } catch {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Email or password is incorrect." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Email or password is incorrect.",
+          });
         }
       }),
     acceptInvitation: publicProcedure
-      .input(z.object({ token: z.string().min(20).max(256), password: z.string().min(12).max(128) }))
+      .input(
+        z.object({
+          token: z.string().min(20).max(256),
+          password: z.string().min(12).max(128),
+        }),
+      )
       .mutation(async ({ input }) => {
         try {
           return await acceptSignerInvitation(input);
         } catch (error) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: error instanceof Error ? error.message : "The invitation could not be accepted.",
+            message:
+              error instanceof Error
+                ? error.message
+                : "The invitation could not be accepted.",
           });
         }
       }),
@@ -92,12 +120,20 @@ export const appRouter = router({
   }),
   internalAdmin: router({
     inviteSigner: publicProcedure
-      .input(z.object({ email: z.string().email().max(320), displayName: z.string().trim().max(160).optional() }))
+      .input(
+        z.object({
+          email: z.string().email().max(320),
+          displayName: z.string().trim().max(160).optional(),
+        }),
+      )
       .mutation(async ({ ctx, input }) => {
         const suppliedKey = ctx.req.headers["x-internal-admin-key"];
         const expectedKey = process.env.INTERNAL_ADMIN_KEY;
         if (!expectedKey || suppliedKey !== expectedKey) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Internal administrator authorization is required." });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Internal administrator authorization is required.",
+          });
         }
         const invitation = await createSignerInvitation(input);
         try {
@@ -111,7 +147,9 @@ export const appRouter = router({
           // The token is shown once and never stored, so an invitation whose
           // email never arrived is unusable and unresendable. Remove it rather
           // than leaving an orphan that also invalidated the previous one.
-          await revokeSignerInvitation(invitation.invitationId).catch(() => undefined);
+          await revokeSignerInvitation(invitation.invitationId).catch(
+            () => undefined,
+          );
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message:
@@ -120,14 +158,22 @@ export const appRouter = router({
               (error instanceof Error ? error.message : ""),
           });
         }
-        return { signer: invitation.signer, expiresAt: invitation.expiresAt, status: "sent" as const };
+        return {
+          signer: invitation.signer,
+          expiresAt: invitation.expiresAt,
+          status: "sent" as const,
+        };
       }),
   }),
   consent: router({
     status: publicProcedure.query(async ({ ctx }) => {
       const signer = await signerFromContext(ctx);
       if (!signer) {
-        return { granted: false, consentVersion: CURRENT_CONSENT_VERSION, scopes: [] as string[] };
+        return {
+          granted: false,
+          consentVersion: CURRENT_CONSENT_VERSION,
+          scopes: [] as string[],
+        };
       }
       const record = await getCurrentConsent(signer.id);
       return {
@@ -146,14 +192,20 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         if (!signer) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before granting consent." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in before granting consent.",
+          });
         }
         return grantConsent({ signerId: signer.id, ...input });
       }),
     withdraw: publicProcedure.mutation(async ({ ctx }) => {
       const signer = await signerFromContext(ctx);
       if (!signer) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before withdrawing consent." });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Sign in before withdrawing consent.",
+        });
       }
       return withdrawConsent(signer.id);
     }),
@@ -162,14 +214,52 @@ export const appRouter = router({
     nextPrompt: publicProcedure.query(async ({ ctx }) => {
       const signer = await signerFromContext(ctx);
       if (!signer) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to collect samples." });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Sign in to collect samples.",
+        });
       }
       return getNextPromptForSigner(signer.id);
     }),
+    /**
+     * A whole block for session mode, so the next sentence can appear the
+     * instant the last one ends rather than after a round trip the signer
+     * would stand through.
+     */
+    block: publicProcedure
+      .input(
+        z
+          .object({
+            size: z.number().int().min(1).max(BLOCK_SIZE).optional(),
+            /** Named explicitly when re-recording sentences already captured. */
+            promptIds: z
+              .array(z.string().min(1).max(16))
+              .max(BLOCK_SIZE)
+              .optional(),
+          })
+          .optional(),
+      )
+      .query(async ({ ctx, input }) => {
+        const signer = await signerFromContext(ctx);
+        if (!signer) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in to collect samples.",
+          });
+        }
+        return getNextPromptsForSigner(
+          signer.id,
+          input?.size ?? BLOCK_SIZE,
+          input?.promptIds,
+        );
+      }),
     progress: publicProcedure.query(async ({ ctx }) => {
       const signer = await signerFromContext(ctx);
       if (!signer) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to view progress." });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Sign in to view progress.",
+        });
       }
       return getSignerProgress(signer.id);
     }),
@@ -178,7 +268,10 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         if (!signer) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before capturing." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in before capturing.",
+          });
         }
         try {
           await requireCurrentConsent(signer.id);
@@ -188,14 +281,25 @@ export const appRouter = router({
             message: "Research consent is required before capture.",
           });
         }
-        return startCaptureSession({ signerId: signer.id, promptId: input.promptId });
+        return startCaptureSession({
+          signerId: signer.id,
+          promptId: input.promptId,
+        });
       }),
     skipPrompt: publicProcedure
-      .input(z.object({ promptId: z.string().min(1).max(16), reason: z.string().trim().max(256) }))
+      .input(
+        z.object({
+          promptId: z.string().min(1).max(16),
+          reason: z.string().trim().max(256),
+        }),
+      )
       .mutation(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         if (!signer) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before skipping." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in before skipping.",
+          });
         }
         return skipPrompt({ signerId: signer.id, ...input });
       }),
@@ -204,7 +308,10 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         if (!signer) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to read a session." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in to read a session.",
+          });
         }
         const session = await getCaptureSession(input.sessionId);
         if (!session || session.signerId !== signer.id) {
@@ -227,7 +334,10 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         if (!signer) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in before translating." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in before translating.",
+          });
         }
         const session = await getCaptureSession(input.sessionId);
         if (!session || session.signerId !== signer.id) {
@@ -243,7 +353,10 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         if (!signer) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to read a translation." });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Sign in to read a translation.",
+          });
         }
         const session = await getCaptureSession(input.sessionId);
         if (!session || session.signerId !== signer.id) {
@@ -267,11 +380,17 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         try {
-          return await recordFeedbackVote({ ...input, signerId: signer?.id ?? null });
+          return await recordFeedbackVote({
+            ...input,
+            signerId: signer?.id ?? null,
+          });
         } catch (error) {
           throw new TRPCError({
             code: "SERVICE_UNAVAILABLE",
-            message: error instanceof Error ? error.message : "Feedback could not be recorded.",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Feedback could not be recorded.",
           });
         }
       }),
@@ -287,11 +406,17 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const signer = await signerFromContext(ctx);
         try {
-          return await recordQualitativeRating({ ...input, signerId: signer?.id ?? null });
+          return await recordQualitativeRating({
+            ...input,
+            signerId: signer?.id ?? null,
+          });
         } catch (error) {
           throw new TRPCError({
             code: "SERVICE_UNAVAILABLE",
-            message: error instanceof Error ? error.message : "Ratings could not be recorded.",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Ratings could not be recorded.",
           });
         }
       }),
