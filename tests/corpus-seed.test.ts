@@ -42,6 +42,24 @@ describe("corpus seed", () => {
     expect(negation.expectedNmms).toContain("headshake");
   });
 
+  it("has no placeholder a signer could not render", () => {
+    // Appendix A prints sentence 2 as "My name is [Name]." A signer cannot sign
+    // brackets, and the alternatives all break the corpus: fingerspelling their
+    // own name makes every sample for that prompt different content against one
+    // reference, and it is the only prompt where signers would not agree with
+    // each other - which is what makes the samples comparable at all.
+    for (const prompt of corpusSeed) {
+      expect(prompt.textEnglish).not.toMatch(/[[\]{}<>]|\.\.\.|…|_{2,}/);
+      expect(prompt.textNepali).not.toMatch(/[[\]{}<>]|\.\.\.|…|_{2,}/);
+    }
+  });
+
+  it("instantiates the name placeholder with a fixed name", () => {
+    const prompt = corpusSeed.find((p) => p.textEnglish.startsWith("My name is"));
+    expect(prompt?.textEnglish).toBe("My name is Sita.");
+    expect(prompt?.textNepali).toContain("सीता");
+  });
+
   it("corrects the mistyped Appendix A utility sentence", () => {
     expect(corpusSeed.some((p) => p.textEnglish === "I need help with this form.")).toBe(true);
     expect(corpusSeed.some((p) => p.textEnglish.startsWith(" need"))).toBe(false);

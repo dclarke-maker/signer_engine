@@ -19,9 +19,14 @@ separately — a different question, and a different reviewer.
 **How to mark it.** Leave *Correction* blank if the Nepali is right; write the
 corrected Nepali if it is not. Use *Notes* for anything uncertain.
 
-**One question to flag.** Sentence 2 contains a literal `[Name]` / `[नाम]`
-placeholder. What should a signer do with it — and would the sentence be better
-reworded to avoid a placeholder entirely?
+**Two things already changed from the source, worth a second opinion:**
+
+- Sentence 2 is printed in the proposal as *"My name is [Name]."* A signer
+  cannot render brackets, so it is now *"My name is Sita."* — is **सीता** a
+  sensible choice?
+- The three time sentences say "7 AM" / "9 AM" / "5 PM" in English, and the
+  Nepali spells them out (*बिहान सात बजे*). That reads as more signable, but
+  please confirm the times match.
 
 ---
 
@@ -33,7 +38,7 @@ reworded to avoid a placeholder entirely?
 | # | English | Nepali (draft) | Correction | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | I am going home. | म घर जाँदैछु। |  |  |
-| 2 | My name is [Name]. | मेरो नाम [नाम] हो। |  |  |
+| 2 | My name is Sita. | मेरो नाम सीता हो। |  |  |
 | 3 | The school is open. | विद्यालय खुला छ। |  |  |
 | 4 | I like coffee. | मलाई कफी मन पर्छ। |  |  |
 | 5 | It is a sunny day. | आज घमाइलो दिन छ। |  |  |

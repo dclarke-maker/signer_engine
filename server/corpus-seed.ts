@@ -30,7 +30,15 @@ export type SeedPrompt = {
 const SENTENCES: Record<CorpusCategory, [string, string][]> = {
   declarative: [
     ["I am going home.", "म घर जाँदैछु।"],
-    ["My name is [Name].", "मेरो नाम [नाम] हो।"],
+    // Appendix A prints this with a "[Name]" placeholder. A signer cannot
+    // render brackets, and the three things they might do instead all break
+    // something: fingerspelling their own name makes every sample for this
+    // prompt different content against one reference, fingerspelling the word
+    // "Name" is not what anyone would do unprompted, and skipping it leaves a
+    // dangling structure. It is also the one prompt where signers would not
+    // agree with each other, which is what the corpus depends on. Instantiated
+    // with a fixed common name so every signer renders the same sentence.
+    ["My name is Sita.", "मेरो नाम सीता हो।"],
     ["The school is open.", "विद्यालय खुला छ।"],
     ["I like coffee.", "मलाई कफी मन पर्छ।"],
     ["It is a sunny day.", "आज घमाइलो दिन छ।"],
